@@ -1,0 +1,1133 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GEDDAN DRAW</title>
+<meta name="description" content="描いた線の「荒ぶり」を、描いたキャラクターのダンスに変換するブラウザゲーム">
+<style>
+:root{
+  --bg:#efedf1; --paper:#faf9fb; --ink:#1d1b20; --sub:#6b6672; --line:#d6d2db;
+  --accent:#ff3d6e; --accent2:#2f6bff; --ok:#14a36b; --card:#ffffff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;}
+body{padding:12px 16px 40px;max-width:1180px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 18px;margin:4px 0 10px}
+h1{margin:0;font-size:clamp(28px,6vw,44px);letter-spacing:.04em;font-weight:900;line-height:1;
+  transform:rotate(-2deg);text-shadow:3px 3px 0 var(--accent)}
+.tagline{margin:0;color:var(--sub);font-size:14px}
+.howto{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;padding:0;list-style:none;font-size:13px}
+.howto li{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+.howto b{color:var(--accent)}
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:760px){.panels{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;min-width:0}
+.card h2{margin:0 0 8px;font-size:16px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.card h2 .ttl{white-space:nowrap}
+.card h2 .num{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;
+  background:var(--ink);color:#fff;font-size:13px}
+.card h2 small{font-weight:400;color:var(--sub);font-size:12px;flex:1 1 220px}
+canvas.pad{display:block;width:100%;aspect-ratio:1/1;background:var(--paper);border:2px dashed var(--line);
+  border-radius:10px;touch-action:none;cursor:crosshair;user-select:none;-webkit-user-select:none}
+.tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+button,.btn{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;color:var(--ink);
+  border-radius:9px;padding:7px 11px;cursor:pointer;touch-action:manipulation}
+button:hover{border-color:#aaa}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:800;font-size:16px;padding:10px 18px}
+button.primary.stop{background:var(--ink);border-color:var(--ink)}
+.swatches{display:flex;gap:4px}
+.sw{width:26px;height:26px;border-radius:50%;border:2px solid #fff;outline:1px solid var(--line);padding:0}
+.sw.sel{outline:3px solid var(--ink)}
+label.inline{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--sub)}
+input[type=range]{width:90px}
+.feat{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 10px;margin-top:8px;font-size:12px}
+@media (max-width:420px){.feat{grid-template-columns:repeat(2,1fr)}}
+.feat div{display:flex;justify-content:space-between;border-bottom:1px dotted var(--line);padding:2px 0}
+.feat span{color:var(--sub)}
+.meter{margin-top:8px;font-size:13px;display:flex;align-items:center;gap:8px}
+.bar{flex:1;height:12px;border-radius:6px;background:#eee;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent2),#b44dff,var(--accent));transition:width .4s}
+.notes{margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--sub);min-height:1em}
+.stage{margin-top:12px}
+.stagewrap{position:relative}
+#stage{display:block;width:min(100%,calc(72vh * 1.5));margin:0 auto;aspect-ratio:3/2;background:var(--paper);border-radius:10px;border:1px solid var(--line)}
+#hud{position:absolute;left:10px;top:8px;font-size:13px;font-weight:700;color:var(--sub);pointer-events:none}
+#shout{position:absolute;right:12px;top:6px;font-size:clamp(18px,4vw,30px);font-weight:900;color:var(--accent);
+  transform:rotate(6deg);opacity:0;transition:opacity .15s;pointer-events:none}
+#shout.show{opacity:1}
+.msg{font-size:13px;color:var(--accent);min-height:1.2em;margin:6px 2px 0}
+footer{margin-top:18px;font-size:12px;color:var(--sub)}
+</style>
+</head>
+<body>
+<header>
+  <h1>GEDDAN DRAW</h1>
+  <p class="tagline">描いた線の「荒ぶり」が、描いたキャラのダンスになる。</p>
+</header>
+<ol class="howto">
+  <li><b>①</b> キャラを描く（うすいガイドに重ねると動きやすい）</li>
+  <li><b>②</b> グチャグチャの一筆書き（速さ・カーブ・グルグルが振り付けに）</li>
+  <li><b>③</b> ▶ 踊らせる → 📷 で保存</li>
+</ol>
+
+<div class="panels">
+  <section class="card">
+    <h2><span class="num">1</span><span class="ttl">キャラを描く</span> <small>頭・胴・腕・脚がガイドの位置だときれいに動く</small></h2>
+    <canvas id="charPad" class="pad" aria-label="キャラクター描画キャンバス"></canvas>
+    <div class="tools">
+      <div class="swatches" id="swatches"></div>
+      <label class="inline">太さ <input type="range" id="width" min="2" max="18" value="5"></label>
+    </div>
+    <div class="tools">
+      <button id="undo">↶ 1画戻す</button>
+      <button id="clearChar">消去</button>
+      <button id="sampleChar">サンプルキャラ</button>
+      <button id="guideBtn" class="on">ガイド</button>
+      <button id="jointBtn" title="関節の点をドラッグして、絵の手足の位置に合わせる">関節を調整</button>
+      <button id="fitBtn" title="描いた絵の大きさ・位置に骨格を合わせる">骨格を絵に合わせる</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">2</span><span class="ttl">一筆書きの線を描く</span> <small>描く速さも記録されます</small></h2>
+    <canvas id="linePad" class="pad" aria-label="一筆書き線の描画キャンバス"></canvas>
+    <div class="tools">
+      <button id="clearLine">クリア</button>
+      <button id="sampleLine">サンプル線</button>
+      <span id="lineInfo" class="inline" style="font-size:12px;color:var(--sub)"></span>
+    </div>
+    <div class="meter">荒ぶり度 <div class="bar"><i id="arabuBar"></i></div><b id="arabuVal">-</b></div>
+    <div class="feat" id="feat"></div>
+    <ul class="notes" id="notes"></ul>
+  </section>
+</div>
+
+<section class="card stage">
+  <h2><span class="num">3</span><span class="ttl">ダンス</span> <small>線の色＝描いた速さ（青:ゆっくり → 赤:速い）。再生中は今使っている区間が光ります</small></h2>
+  <div class="stagewrap">
+    <canvas id="stage" aria-label="ダンスプレビュー"></canvas>
+    <div id="hud"></div>
+    <div id="shout">荒ぶり！</div>
+  </div>
+  <div class="tools">
+    <button id="playBtn" class="primary">▶ 踊らせる</button>
+    <button id="saveBtn">📷 PNG保存</button>
+    <button id="soundBtn" class="on">🔊 音あり</button>
+    <button id="komaBtn" class="on" title="コマ打ち（12fps）風の手描きアニメ感">コマ打ち</button>
+  </div>
+  <p class="msg" id="msg"></p>
+</section>
+
+<footer>
+  サーバー通信なし・すべてブラウザ内で動作します。音はブラウザで合成した自作サウンドです。
+</footer>
+
+<script>
+'use strict';
+/* ============================================================
+   基本ユーティリティ
+   ============================================================ */
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const wrap = a => { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI; };
+const $ = s => document.querySelector(s);
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const PW = 600, PH = 600;   // 描画キャンバスの論理サイズ
+const SW = 900, SH = 600;   // ステージの論理サイズ
+
+function fitCanvas(cv, w, h, maxDpr = 2) {
+  const d = Math.min(maxDpr, window.devicePixelRatio || 1);
+  cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  return { ctx, d };
+}
+function evPos(cv, e, w, h) {
+  const r = cv.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width * w, (e.clientY - r.top) / r.height * h];
+}
+// 折れ線を等間隔に再サンプル
+function resample(pts, step) {
+  if (pts.length < 2) return pts.map(p => [p[0], p[1]]);
+  const out = [[pts[0][0], pts[0][1]]];
+  let carry = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+    if (L === 0) continue;
+    let d = step - carry;
+    while (d <= L) { out.push([a[0] + dx * d / L, a[1] + dy * d / L]); d += step; }
+    carry = L - (d - step);
+  }
+  const last = pts[pts.length - 1], pl = out[out.length - 1];
+  if (Math.hypot(last[0] - pl[0], last[1] - pl[1]) > step * 0.3) out.push([last[0], last[1]]);
+  return out;
+}
+
+/* ============================================================
+   骨格（ガイド兼スケルトン）
+   ============================================================ */
+const DEFAULT_JOINTS = {
+  headTop: [300, 62], neck: [300, 168], chest: [300, 194], mid: [300, 272], hip: [300, 350],
+  shoulderL: [262, 202], elbowL: [200, 250], handL: [140, 298],
+  shoulderR: [338, 202], elbowR: [400, 250], handR: [460, 298],
+  hipL: [278, 352], kneeL: [262, 450], footL: [250, 548],
+  hipR: [322, 352], kneeR: [338, 450], footR: [350, 548],
+};
+const BONES = [
+  { n: 'spine1', a: 'hip', b: 'mid', p: null },
+  { n: 'spine2', a: 'mid', b: 'chest', p: 'spine1' },
+  { n: 'neck', a: 'chest', b: 'neck', p: 'spine2' },
+  { n: 'head', a: 'neck', b: 'headTop', p: 'neck' },
+  { n: 'clavL', a: 'chest', b: 'shoulderL', p: 'spine2' },
+  { n: 'uarmL', a: 'shoulderL', b: 'elbowL', p: 'clavL' },
+  { n: 'farmL', a: 'elbowL', b: 'handL', p: 'uarmL' },
+  { n: 'clavR', a: 'chest', b: 'shoulderR', p: 'spine2' },
+  { n: 'uarmR', a: 'shoulderR', b: 'elbowR', p: 'clavR' },
+  { n: 'farmR', a: 'elbowR', b: 'handR', p: 'uarmR' },
+  { n: 'pelvL', a: 'hip', b: 'hipL', p: null },
+  { n: 'thighL', a: 'hipL', b: 'kneeL', p: 'pelvL' },
+  { n: 'shinL', a: 'kneeL', b: 'footL', p: 'thighL' },
+  { n: 'pelvR', a: 'hip', b: 'hipR', p: null },
+  { n: 'thighR', a: 'hipR', b: 'kneeR', p: 'pelvR' },
+  { n: 'shinR', a: 'kneeR', b: 'footR', p: 'thighR' },
+];
+const NB = BONES.length;
+const BI = Object.fromEntries(BONES.map((b, i) => [b.n, i]));
+BONES.forEach(b => { b.pi = b.p ? BI[b.p] : -1; });
+
+function restInfo(J) {
+  return BONES.map(b => {
+    const A = J[b.a], B = J[b.b];
+    const dx = B[0] - A[0], dy = B[1] - A[1], len = Math.hypot(dx, dy) || 1;
+    return { A, B, ang: Math.atan2(dy, dx), len, ux: dx / len, uy: dy / len };
+  });
+}
+function neutralPose() {
+  return { rx: 0, ry: 0, rot: 0, cz: 1, cr: 0, cfx: 0, cfy: 0,
+    b: new Float32Array(NB), s: new Float32Array(NB).fill(1) };
+}
+function clonePose(p) {
+  return { ...p, b: Float32Array.from(p.b), s: Float32Array.from(p.s) };
+}
+// 順運動学：ポーズ → 各ボーンのワールド位置・角度
+function fk(pose, J, R) {
+  const F = new Array(NB);
+  const root = [J.hip[0] + pose.rx, J.hip[1] + pose.ry];
+  for (let i = 0; i < NB; i++) {
+    const b = BONES[i], r = R[i];
+    const par = b.pi >= 0 ? F[b.pi] : null;
+    const delta = (par ? par.delta : pose.rot) + pose.b[i];
+    const ang = r.ang + delta, s = pose.s[i];
+    const A = par ? par.B : root;
+    const ux = Math.cos(ang), uy = Math.sin(ang);
+    F[i] = { A, B: [A[0] + ux * r.len * s, A[1] + uy * r.len * s], delta, s, ux, uy, len: r.len };
+  }
+  return F;
+}
+
+/* ============================================================
+   スキニング：描いた線の各点を近い骨に紐付け、骨と一緒に変形
+   （領域を切らずに滑らかに曲がる＝ゴムのような手足）
+   ============================================================ */
+function prepareSkin(strokes, J) {
+  const R = restInfo(J);
+  let total = 0;
+  for (const s of strokes) for (let i = 1; i < s.pts.length; i++)
+    total += Math.hypot(s.pts[i][0] - s.pts[i - 1][0], s.pts[i][1] - s.pts[i - 1][1]);
+  const step = clamp(total / 5000, 2.5, 8); // 点数を制御して低スペックでも軽く
+  const out = [];
+  const d2 = new Float32Array(NB);
+  for (const s of strokes) {
+    const pts = resample(s.pts, step);
+    const n = pts.length;
+    const bi = new Uint8Array(n * 3), w = new Float32Array(n * 3),
+      al = new Float32Array(n * 3), pe = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const [px, py] = pts[i];
+      for (let k = 0; k < NB; k++) {
+        const r = R[k];
+        const dx = px - r.A[0], dy = py - r.A[1];
+        const t = clamp((dx * r.ux + dy * r.uy) / r.len, 0, 1);
+        const qx = r.A[0] + r.ux * r.len * t - px, qy = r.A[1] + r.uy * r.len * t - py;
+        d2[k] = qx * qx + qy * qy;
+      }
+      // 近い順に3本
+      const idx = [0, 1, 2].map(() => -1);
+      for (let k = 0; k < NB; k++) {
+        for (let j = 0; j < 3; j++) {
+          if (idx[j] < 0 || d2[k] < d2[idx[j]]) { idx.splice(j, 0, k); idx.length = 3; break; }
+        }
+      }
+      let sum = 0; const ws = [];
+      for (let j = 0; j < 3; j++) { const v = 1 / Math.pow(d2[idx[j]] + 60, 2); ws.push(v); sum += v; }
+      for (let j = 0; j < 3; j++) {
+        const k = idx[j], r = R[k], o = i * 3 + j;
+        const dx = px - r.A[0], dy = py - r.A[1];
+        bi[o] = k; w[o] = ws[j] / sum;
+        al[o] = dx * r.ux + dy * r.uy;
+        pe[o] = -dx * r.uy + dy * r.ux;
+      }
+    }
+    out.push({ color: s.color, width: s.width, n, bi, w, al, pe, xs: new Float32Array(n), ys: new Float32Array(n) });
+  }
+  return { strokes: out, R };
+}
+function skin(sk, F) {
+  for (const s of sk.strokes) {
+    for (let i = 0; i < s.n; i++) {
+      let x = 0, y = 0;
+      for (let j = 0; j < 3; j++) {
+        const o = i * 3 + j, wt = s.w[o];
+        if (wt < 1e-4) continue;
+        const f = F[s.bi[o]];
+        let a = s.al[o];
+        a = a < 0 ? a : (a > f.len ? f.len * f.s + (a - f.len) : a * f.s);
+        const p = s.pe[o];
+        x += wt * (f.A[0] + f.ux * a - f.uy * p);
+        y += wt * (f.A[1] + f.uy * a + f.ux * p);
+      }
+      s.xs[i] = x; s.ys[i] = y;
+    }
+  }
+}
+
+/* ============================================================
+   状態
+   ============================================================ */
+const COLORS = ['#1d1b20', '#e8344e', '#2f6bff', '#14a36b', '#ff9a1f', '#9b4dff'];
+const state = {
+  strokes: [], color: COLORS[0], width: 5,
+  joints: JSON.parse(JSON.stringify(DEFAULT_JOINTS)),
+  guide: true, jointMode: false,
+  line: [], analysis: null,
+  sound: true, koma: true,
+};
+
+/* ============================================================
+   ① キャラ描画キャンバス
+   ============================================================ */
+const charPad = $('#charPad');
+const charC = fitCanvas(charPad, PW, PH).ctx;
+
+function drawGuide(ctx, J, strong) {
+  ctx.save();
+  const R = restInfo(J);
+  ctx.strokeStyle = strong ? 'rgba(47,107,255,.35)' : 'rgba(120,110,140,.13)';
+  ctx.lineWidth = strong ? 6 : 24;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < NB; i++) {
+    if (BONES[i].n === 'head') continue;
+    ctx.beginPath(); ctx.moveTo(R[i].A[0], R[i].A[1]); ctx.lineTo(R[i].B[0], R[i].B[1]); ctx.stroke();
+  }
+  // 頭
+  const hx = (J.neck[0] + J.headTop[0]) / 2, hy = (J.neck[1] + J.headTop[1]) / 2;
+  const hr = Math.hypot(J.neck[0] - J.headTop[0], J.neck[1] - J.headTop[1]) / 2;
+  ctx.beginPath(); ctx.arc(hx, hy, hr, 0, TAU);
+  if (strong) ctx.stroke(); else { ctx.fillStyle = 'rgba(120,110,140,.10)'; ctx.fill(); }
+  if (!strong) {
+    ctx.fillStyle = 'rgba(110,100,130,.45)'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('頭', hx, hy + 5);
+    ctx.fillText('胴', J.mid[0], J.mid[1] + 5);
+    ctx.fillText('腕', J.handL[0] + 8, J.handL[1] + 28);
+    ctx.fillText('腕', J.handR[0] - 8, J.handR[1] + 28);
+    ctx.fillText('脚', J.footL[0] - 26, J.footL[1] - 10);
+    ctx.fillText('脚', J.footR[0] + 26, J.footR[1] - 10);
+  }
+  ctx.restore();
+}
+function strokePath(ctx, pts) {
+  if (pts.length === 1) {
+    ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], ctx.lineWidth / 2, 0, TAU);
+    ctx.fillStyle = ctx.strokeStyle; ctx.fill(); return;
+  }
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
+    ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+  }
+  const l = pts[pts.length - 1]; ctx.lineTo(l[0], l[1]); ctx.stroke();
+}
+function renderChar() {
+  const c = charC;
+  c.clearRect(0, 0, PW, PH);
+  if (state.guide) drawGuide(c, state.joints, false);
+  for (const s of state.strokes) { c.strokeStyle = s.color; c.lineWidth = s.width; strokePath(c, s.pts); }
+  if (state.jointMode) {
+    drawGuide(c, state.joints, true);
+    for (const [k, p] of Object.entries(state.joints)) {
+      c.beginPath(); c.arc(p[0], p[1], 9, 0, TAU);
+      c.fillStyle = k === dragJoint ? '#ff3d6e' : '#2f6bff'; c.fill();
+      c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
+    }
+  }
+  if (!state.strokes.length && !state.jointMode) {
+    c.fillStyle = 'rgba(80,70,95,.55)'; c.font = '17px sans-serif'; c.textAlign = 'center';
+    c.fillText('ここにキャラを描いてね', PW / 2, 26);
+  }
+}
+let drawing = null, dragJoint = null;
+charPad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  charPad.setPointerCapture(e.pointerId);
+  const p = evPos(charPad, e, PW, PH);
+  if (state.jointMode) {
+    let best = null, bd = 40;
+    for (const [k, q] of Object.entries(state.joints)) {
+      const d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < bd) { bd = d; best = k; }
+    }
+    dragJoint = best; renderChar(); return;
+  }
+  drawing = { color: state.color, width: state.width, pts: [p] };
+  state.strokes.push(drawing); renderChar();
+});
+charPad.addEventListener('pointermove', e => {
+  if (dragJoint) {
+    const p = evPos(charPad, e, PW, PH);
+    state.joints[dragJoint] = [clamp(p[0], 0, PW), clamp(p[1], 0, PH)]; renderChar(); return;
+  }
+  if (!drawing) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  for (const ev of (evs.length ? evs : [e])) {
+    const p = evPos(charPad, ev, PW, PH), l = drawing.pts[drawing.pts.length - 1];
+    if (Math.hypot(p[0] - l[0], p[1] - l[1]) >= 1.5) drawing.pts.push(p);
+  }
+  renderChar();
+});
+function endChar() {
+  if (dragJoint) { dragJoint = null; renderChar(); charChanged(); return; }
+  if (!drawing) return;
+  drawing = null; charChanged();
+}
+charPad.addEventListener('pointerup', endChar);
+charPad.addEventListener('pointercancel', endChar);
+
+// ツール
+const swWrap = $('#swatches');
+COLORS.forEach((c, i) => {
+  const b = document.createElement('button');
+  b.className = 'sw' + (i === 0 ? ' sel' : ''); b.style.background = c; b.title = c; b.setAttribute('aria-label', '色 ' + c);
+  b.onclick = () => { state.color = c; swWrap.querySelectorAll('.sw').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); };
+  swWrap.appendChild(b);
+});
+$('#width').oninput = e => state.width = +e.target.value;
+$('#undo').onclick = () => { state.strokes.pop(); renderChar(); charChanged(); };
+$('#clearChar').onclick = () => { state.strokes = []; renderChar(); charChanged(); };
+$('#guideBtn').onclick = e => { state.guide = !state.guide; e.target.classList.toggle('on', state.guide); renderChar(); };
+$('#jointBtn').onclick = e => {
+  state.jointMode = !state.jointMode; e.target.classList.toggle('on', state.jointMode);
+  e.target.textContent = state.jointMode ? '関節調整を終了' : '関節を調整';
+  msg(state.jointMode ? '青い点をドラッグして、絵の頭・肩・ひじ・手・腰・ひざ・足の位置に合わせてください' : '');
+  renderChar();
+};
+$('#fitBtn').onclick = () => {
+  if (!state.strokes.length) { msg('先にキャラを描いてください'); return; }
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const s of state.strokes) for (const p of s.pts) {
+    x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+  }
+  const D = DEFAULT_JOINTS;
+  const dw = D.handR[0] - D.handL[0], dh = D.footL[1] - D.headTop[1];
+  const sc = Math.max(0.15, Math.min((y1 - y0) / dh, (x1 - x0) / dw * 1.25));
+  const cx0 = 300, cy0 = (D.headTop[1] + D.footL[1]) / 2, cx1 = (x0 + x1) / 2, cy1 = (y0 + y1) / 2;
+  for (const k in D) state.joints[k] = [cx1 + (D[k][0] - cx0) * sc, cy1 + (D[k][1] - cy0) * sc];
+  renderChar(); charChanged(); msg('骨格を絵に合わせました。ずれていたら「関節を調整」で直せます');
+};
+
+/* サンプルキャラ（ネコ耳の人） */
+function sampleCharacter() {
+  const J = state.joints, S = [];
+  const W = 5, col = '#1d1b20';
+  const wob = (pts, a = 1.1, f = 0.45) => pts.map(([x, y], i) => [x + Math.sin(i * f + 1) * a, y + Math.cos(i * f * 1.3) * a]);
+  function tube(chain, r0, r1, capEnd = true) {
+    const pts = resample(chain, 5), n = pts.length, L = [], Rr = [];
+    for (let i = 0; i < n; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      let dx = b[0] - a[0], dy = b[1] - a[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+      const r = lerp(r0, r1, i / (n - 1));
+      L.push([pts[i][0] - dy * r, pts[i][1] + dx * r]); Rr.push([pts[i][0] + dy * r, pts[i][1] - dx * r]);
+    }
+    if (!capEnd) return [wob(L), wob(Rr)];
+    const e = pts[n - 1], p = pts[n - 2], ang = Math.atan2(e[1] - p[1], e[0] - p[0]), cap = [];
+    for (let k = 1; k < 10; k++) { const t = ang + Math.PI / 2 - Math.PI * k / 10; cap.push([e[0] + Math.cos(t) * r1, e[1] + Math.sin(t) * r1]); }
+    return [wob([...L, ...cap, ...Rr.reverse()])];
+  }
+  const add = (pts, w = W) => S.push({ color: col, width: w, pts });
+  // 頭＋ネコ耳
+  const hx = (J.neck[0] + J.headTop[0]) / 2, hy = (J.neck[1] + J.headTop[1]) / 2 + 4;
+  const hr = Math.hypot(J.neck[0] - J.headTop[0], J.neck[1] - J.headTop[1]) / 2 - 6;
+  const head = [];
+  for (let k = 0; k <= 72; k++) {
+    const t = Math.PI / 2 + TAU * k / 72; // 下から一周
+    let r = hr;
+    for (const ec of [-Math.PI * 0.72, -Math.PI * 0.28]) {
+      const d = Math.abs(wrap(t - ec)); if (d < 0.32) r += (0.32 - d) / 0.32 * 34;
+    }
+    head.push([hx + Math.cos(t) * r * 1.05, hy + Math.sin(t) * r]);
+  }
+  add(wob(head, 0.9));
+  add([[hx - 16, hy - 4], [hx - 15, hy + 4]], 5);
+  add([[hx + 16, hy - 4], [hx + 15, hy + 4]], 5);
+  add([[hx - 7, hy + 18], [hx, hy + 13], [hx + 7, hy + 18], [hx, hy + 26], [hx - 7, hy + 18]], 3.5);
+  // 胴
+  tube([J.neck, J.chest, J.mid, J.hip], 16, 24, false).forEach(p => add(p));
+  // 腕・脚
+  for (const s of ['L', 'R']) {
+    tube([J['shoulder' + s], J['elbow' + s], J['hand' + s]], 9, 8).forEach(p => add(p));
+    tube([J['hip' + s], J['knee' + s], J['foot' + s]], 12, 10).forEach(p => add(p));
+  }
+  return S;
+}
+$('#sampleChar').onclick = () => { state.joints = JSON.parse(JSON.stringify(DEFAULT_JOINTS)); state.strokes = sampleCharacter(); renderChar(); charChanged(); };
+
+/* ============================================================
+   ② 一筆書き線キャンバス＋特徴抽出
+   ============================================================ */
+const linePad = $('#linePad');
+const lineC = fitCanvas(linePad, PW, PH).ctx;
+let lineDrawing = false;
+
+function speedColor(rel) {
+  const h = 225 - clamp(rel / 2.4, 0, 1) * 225;
+  return `hsl(${h},85%,50%)`;
+}
+function renderLine(activeChunk = -1, progress = 0) {
+  const c = lineC;
+  c.clearRect(0, 0, PW, PH);
+  const an = state.analysis;
+  if (lineDrawing || !an) {
+    const pts = state.line;
+    if (pts.length) { c.strokeStyle = '#1d1b20'; c.lineWidth = 4; strokePath(c, pts.map(p => [p.x, p.y])); }
+    else {
+      c.fillStyle = 'rgba(80,70,95,.55)'; c.font = '17px sans-serif'; c.textAlign = 'center';
+      c.fillText('グルグル・ジグザグ・急加速！ 一筆で描いてね', PW / 2, 26);
+    }
+    return;
+  }
+  const S = an.samples;
+  c.lineWidth = 5;
+  for (let i = 1; i < S.length; i++) {
+    const ch = an.sampleChunk[i];
+    const dim = activeChunk >= 0 && ch !== activeChunk;
+    c.globalAlpha = dim ? 0.18 : 1;
+    c.lineWidth = activeChunk >= 0 && !dim ? 9 : 5;
+    c.strokeStyle = speedColor(S[i].rel);
+    c.beginPath(); c.moveTo(S[i - 1].x, S[i - 1].y); c.lineTo(S[i].x, S[i].y); c.stroke();
+  }
+  c.globalAlpha = 1;
+  const s0 = S[0], s1 = S[S.length - 1];
+  c.fillStyle = '#14a36b'; c.beginPath(); c.arc(s0.x, s0.y, 8, 0, TAU); c.fill();
+  c.fillStyle = '#1d1b20'; c.beginPath(); c.arc(s1.x, s1.y, 6, 0, TAU); c.fill();
+  if (activeChunk >= 0) {
+    const ck = an.chunks[activeChunk];
+    const i = Math.min(S.length - 1, Math.round(lerp(ck.i0, ck.i1, progress)));
+    c.fillStyle = '#ff3d6e'; c.strokeStyle = '#fff'; c.lineWidth = 3;
+    c.beginPath(); c.arc(S[i].x, S[i].y, 11, 0, TAU); c.fill(); c.stroke();
+  }
+}
+linePad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  linePad.setPointerCapture(e.pointerId);
+  lineDrawing = true;
+  const p = evPos(linePad, e, PW, PH);
+  state.line = [{ x: p[0], y: p[1], t: e.timeStamp }];
+  state.analysis = null;
+  renderLine();
+});
+linePad.addEventListener('pointermove', e => {
+  if (!lineDrawing) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  for (const ev of (evs.length ? evs : [e])) {
+    const p = evPos(linePad, ev, PW, PH), l = state.line[state.line.length - 1];
+    if (Math.hypot(p[0] - l.x, p[1] - l.y) >= 1) state.line.push({ x: p[0], y: p[1], t: Math.max(ev.timeStamp, l.t) });
+  }
+  if (state.line.length > 6000) state.line = state.line.filter((_, i) => i % 2 === 0); // 点数上限
+  $('#lineInfo').textContent = `描画中… ${((state.line[state.line.length - 1].t - state.line[0].t) / 1000).toFixed(1)}秒`;
+  renderLine();
+});
+function endLine() {
+  if (!lineDrawing) return;
+  lineDrawing = false;
+  lineChanged();
+}
+linePad.addEventListener('pointerup', endLine);
+linePad.addEventListener('pointercancel', endLine);
+
+function analyzeLine(raw) {
+  if (raw.length < 4) return null;
+  // 弧長・時刻つきで等間隔(6px)に再サンプル
+  const cum = [0];
+  for (let i = 1; i < raw.length; i++) cum.push(cum[i - 1] + Math.hypot(raw[i].x - raw[i - 1].x, raw[i].y - raw[i - 1].y));
+  const total = cum[cum.length - 1];
+  const duration = Math.max(1, raw[raw.length - 1].t - raw[0].t);
+  if (total < 80) return null;
+  const STEP = 6, S = [];
+  let j = 1;
+  for (let d = 0; d <= total; d += STEP) {
+    while (j < raw.length - 1 && cum[j] < d) j++;
+    const a = raw[j - 1], b = raw[j], seg = cum[j] - cum[j - 1] || 1, u = clamp((d - cum[j - 1]) / seg, 0, 1);
+    S.push({ x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u), t: lerp(a.t, b.t, u) });
+  }
+  const n = S.length;
+  if (n < 8) return null;
+  const meanV = total / duration; // px/ms
+  // 速度（窓で平滑化）
+  for (let i = 0; i < n; i++) {
+    const a = S[Math.max(0, i - 3)], b = S[Math.min(n - 1, i + 3)];
+    const dist = (Math.min(n - 1, i + 3) - Math.max(0, i - 3)) * STEP;
+    const dt = Math.max(b.t - a.t, 4);
+    S[i].v = dist / dt; S[i].rel = S[i].v / meanV;
+  }
+  // 方向・曲がり
+  for (let i = 0; i < n; i++) {
+    const a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)];
+    S[i].dir = Math.atan2(b.y - a.y, b.x - a.x);
+  }
+  S[0].turn = 0;
+  for (let i = 1; i < n; i++) S[i].turn = wrap(S[i].dir - S[i - 1].dir);
+  // 急カーブ（3サンプルで1.2rad以上）
+  let sharpTotal = 0, cool = 0;
+  for (let i = 0; i < n; i++) {
+    S[i].sharp = 0;
+    if (cool > 0) { cool--; continue; }
+    if (i + 3 < n && Math.abs(wrap(S[i + 3].dir - S[i].dir)) > 1.2) { S[i].sharp = 1; sharpTotal++; cool = 4; }
+  }
+  // ビート（区間）分割：長さ・点数でパターン量が増える
+  let nBeats = Math.round(total / 140 + raw.length / 400);
+  nBeats = clamp(Math.round(nBeats / 4) * 4, 8, 32);
+  const chunks = [], sampleChunk = new Int16Array(n);
+  for (let c = 0; c < nBeats; c++) {
+    const i0 = Math.floor(c * (n - 1) / nBeats), i1 = Math.max(i0 + 1, Math.floor((c + 1) * (n - 1) / nBeats));
+    let turnSum = 0, turnAbs = 0, sharp = 0, peak = 0, vx = 0, vy = 0;
+    for (let i = i0; i <= i1; i++) {
+      sampleChunk[i] = c;
+      if (i > i0) { turnSum += S[i].turn; turnAbs += Math.abs(S[i].turn); }
+      sharp += S[i].sharp; peak = Math.max(peak, S[i].rel);
+      vx += Math.cos(S[i].dir); vy += Math.sin(S[i].dir);
+    }
+    const dt = Math.max(S[i1].t - S[i0].t, 4);
+    const rel = ((i1 - i0) * STEP / dt) / meanV;
+    const ex = S[i1].x - S[i0].x, ey = S[i1].y - S[i0].y;
+    const dir = Math.hypot(ex, ey) > 25 ? Math.atan2(ey, ex) : Math.atan2(vy, vx);
+    chunks.push({ i0, i1, rel, peak, dir, turnSum, turnAbs, sharp, loops: turnSum / TAU });
+  }
+  // 全体特徴
+  let mr = 0; for (const s of S) mr += s.rel; mr /= n;
+  let vr = 0; for (const s of S) vr += (s.rel - mr) ** 2; const cv = Math.sqrt(vr / n) / (mr || 1);
+  let netTurn = 0, absTurn = 0; for (const s of S) { netTurn += s.turn; absTurn += Math.abs(s.turn); }
+  const loopsAbs = chunks.reduce((a, c) => a + Math.abs(c.loops), 0);
+  const speedPxS = meanV * 1000;
+  const sharpPerK = sharpTotal / (total / 1000);
+  const arabu = Math.round(
+    30 * Math.min(1, cv / 0.7) + 25 * Math.min(1, sharpPerK / 7) +
+    25 * Math.min(1, loopsAbs / Math.max(1, total / 700)) + 20 * Math.min(1, speedPxS / 1600));
+  const bpm = Math.round(clamp(104 + (speedPxS - 350) * 0.045, 100, 168));
+  let seed = 2166136261;
+  for (const p of raw) { seed ^= (Math.round(p.x) * 73856093) ^ (Math.round(p.y) * 19349663); seed = Math.imul(seed, 16777619); }
+  return { samples: S, sampleChunk, chunks, total, duration, points: raw.length, meanV, speedPxS, cv,
+    sharpTotal, loopsAbs, netLoops: netTurn / TAU, absTurn, arabu: clamp(arabu, 0, 100), bpm, seed: seed >>> 0 };
+}
+function showFeatures() {
+  const an = state.analysis;
+  const f = $('#feat'), notes = $('#notes');
+  if (!an) {
+    f.innerHTML = ''; notes.innerHTML = ''; $('#arabuBar').style.width = '0'; $('#arabuVal').textContent = '-';
+    $('#lineInfo').textContent = state.line.length > 1 ? '線が短すぎます。もっと長く描いてね' : '';
+    return;
+  }
+  const items = [
+    ['長さ', Math.round(an.total) + 'px'], ['時間', (an.duration / 1000).toFixed(1) + '秒'], ['点数', an.points],
+    ['平均速度', Math.round(an.speedPxS) + 'px/秒'], ['急カーブ', an.sharpTotal + '回'], ['グルグル', an.loopsAbs.toFixed(1) + '周'],
+    ['緩急', an.cv.toFixed(2)], ['テンポ', an.bpm + ' BPM'], ['振付数', an.chunks.length + '拍'],
+  ];
+  f.innerHTML = items.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+  $('#arabuBar').style.width = an.arabu + '%'; $('#arabuVal').textContent = an.arabu;
+  const n = [];
+  if (an.loopsAbs > Math.max(1.5, an.total / 900)) n.push('グルグル → その場回転・腕ぶん回しが多め');
+  if (an.sharpTotal >= 5) n.push('カクカク → 胴のひねり・首かしげ・首のびが多め');
+  if (an.cv > 0.45) n.push('緩急あり → 突然の「荒ぶり」（手足びよーん＋ズーム）');
+  if (an.speedPxS > 900) n.push('速い → テンポ速め・跳ねる');
+  else if (an.speedPxS < 400) n.push('ゆっくり → 落ち着いたテンポ');
+  n.push('線の向き → 体の傾きと腕を向ける方向');
+  notes.innerHTML = n.map(t => `<li>${t}</li>`).join('');
+  $('#lineInfo').textContent = '';
+}
+
+/* サンプル線（3種類を順番に） */
+const SAMPLE_LINES = [
+  { name: 'グルグル', gen: s => {
+      const th = s * TAU * 7;
+      return { x: 90 + s * 420 + Math.cos(th) * (50 + 30 * Math.sin(s * 9)), y: 300 + Math.sin(s * 5) * 110 + Math.sin(th) * 60,
+        v: 0.9 + 0.8 * Math.sin(s * 13) ** 2 };
+    } },
+  { name: 'ジグザグ', gen: s => {
+      const k = s * 12, f = k - Math.floor(k), up = Math.floor(k) % 2 === 0;
+      return { x: 70 + s * 460, y: 300 + (up ? f * 2 - 1 : 1 - f * 2) * (90 + 120 * Math.sin(s * 3.1) ** 2),
+        v: Math.floor(k) % 3 === 0 ? 2.6 : 0.6 };
+    } },
+  { name: 'ミックス', gen: s => {
+      if (s < 0.3) { const u = s / 0.3; return { x: 80 + u * 260, y: 160 + Math.sin(u * 9) * 40, v: 0.45 }; }
+      if (s < 0.55) { const u = (s - 0.3) / 0.25; return { x: 340 + Math.sin(u * 61) * 70 + u * 40, y: 160 + u * 160 + Math.cos(u * 47) * 50, v: 3.0 }; }
+      const u = (s - 0.55) / 0.45, th = u * TAU * 4.5;
+      return { x: 380 - u * 220 + Math.cos(th) * 70, y: 380 + u * 60 + Math.sin(th) * 70, v: 1.2 + u };
+    } },
+];
+let sampleIdx = 0;
+function makeSampleLine(def) {
+  const out = []; let t = 0, prev = null;
+  for (let i = 0; i <= 900; i++) {
+    const p = def.gen(i / 900);
+    if (prev) t += Math.hypot(p.x - prev.x, p.y - prev.y) / (p.v * 0.75); // px/ms
+    out.push({ x: clamp(p.x, 10, PW - 10), y: clamp(p.y, 10, PH - 10), t });
+    prev = p;
+  }
+  return out;
+}
+$('#sampleLine').onclick = () => {
+  const def = SAMPLE_LINES[sampleIdx % SAMPLE_LINES.length]; sampleIdx++;
+  state.line = makeSampleLine(def);
+  $('#sampleLine').textContent = `サンプル線（次: ${SAMPLE_LINES[sampleIdx % SAMPLE_LINES.length].name}）`;
+  lineChanged(def.name);
+};
+$('#clearLine').onclick = () => { state.line = []; state.analysis = null; renderLine(); showFeatures(); if (play) stopDance(); };
+
+function lineChanged(name) {
+  state.analysis = analyzeLine(state.line);
+  renderLine(); showFeatures();
+  if (name && state.analysis) $('#lineInfo').textContent = `サンプル「${name}」`;
+  if (play) startDance(true);
+}
+function charChanged() {
+  if (play) startDance(true); else drawStill();
+}
+
+/* ============================================================
+   ③ ダンス生成：線の運動的特徴 → 振り付けキーフレーム
+   ============================================================ */
+function buildDance(an, J) {
+  const R = restInfo(J);
+  const rng = mulberry32(an.seed);
+  const beat = 60 / an.bpm;
+  const kfs = [];
+  let prev = neutralPose(), spinAcc = 0;
+  const footY = Math.max(J.footL[1], J.footR[1]);
+  const bodyH = footY - J.headTop[1];
+  const U = bodyH / 486; // キャラの大きさ基準
+  const LEGMODES = ['stand', 'kick', 'squat', 'run', 'cross', 'oneleg'];
+
+  an.chunks.forEach((ch, ci) => {
+    const e = clamp(ch.rel, 0.35, 2.6);              // 描画速度 → エネルギー
+    const curv = clamp(ch.turnAbs / 3.2, 0, 1.4);    // 曲率
+    const sgn = ch.turnSum >= 0 ? 1 : -1;
+    const loops = Math.abs(ch.loops);                // 旋回・ループ
+    const burst = ch.peak > 1.9 || e > 1.55;         // 急加速 → 荒ぶり
+    const dir = ch.dir;                              // 線の方向
+    const cosd = Math.cos(dir), sind = Math.sin(dir);
+
+    const mk = (variant) => {
+      const p = neutralPose();
+      const r = () => rng() - 0.5;
+      // 体の傾き（方向）＋ひねり（曲率）
+      const lean = cosd * 0.32 * e + sgn * curv * 0.3 + r() * 0.2;
+      p.rot = spinAcc + lean;
+      if (loops > 1.5 && variant === 0 && rng() < 0.6) p.rot += Math.PI * (rng() < 0.5 ? 1 : -1) * 0.85; // 逆さま
+      p.b[BI.spine1] = sgn * curv * 0.35 + r() * 0.35 * e;
+      p.b[BI.spine2] = sgn * curv * 0.45 + r() * 0.35 * e;
+      p.b[BI.neck] = r() * 0.6 + sgn * curv * 0.3;
+      p.b[BI.head] = sgn * curv * 0.7 + r() * 0.7;
+      if (ch.sharp >= 1 && rng() < 0.55) p.s[BI.neck] = 1 + Math.min(3.2, 1 + ch.sharp * 0.8); // 首のび
+      // バウンス（速度）
+      const jump = (ci + variant) % 2 === 0;
+      p.ry = (jump ? -1 : 0.45) * 42 * U * (e - 0.25);
+      p.rx = cosd * 40 * U * e + r() * 20 * U;
+      // 腕：線の方向へ向ける
+      const torso = p.rot + p.b[BI.spine1] + p.b[BI.spine2];
+      const lead = cosd < 0 ? 'L' : 'R', other = lead === 'L' ? 'R' : 'L';
+      let aimLead = dir + r() * 0.6;
+      if (variant) aimLead += Math.PI * 0.7 * (rng() < 0.5 ? 1 : -1);
+      const m = rng();
+      let aimOther = m < 0.33 ? Math.PI - aimLead : m < 0.66 ? aimLead + Math.PI : -Math.PI / 2 + r() * 1.2;
+      if (burst && rng() < 0.5) aimOther = aimLead + r() * 0.5; // 両手同じ方向
+      const aims = { [lead]: aimLead, [other]: aimOther };
+      for (const s of ['L', 'R']) {
+        const ui = BI['uarm' + s], fi = BI['farm' + s];
+        let loc = wrap(aims[s] - R[ui].ang - torso);
+        loc = prev.b[ui] + wrap(loc - prev.b[ui]);
+        if (loops > 0.7) loc += sgn * TAU * (s === lead ? 1 : 0); // 腕ぶん回し
+        p.b[ui] = loc;
+        p.b[fi] = (rng() < 0.5 ? -1 : 1) * clamp(0.15 + curv * 1.3 + rng() * 0.5, 0, 2.3);
+        const st = 1 + Math.max(0, e - 0.9) * 0.55 + (burst ? 0.35 + rng() * 0.45 : 0);
+        p.s[ui] = clamp(st, 0.8, 2.3); p.s[fi] = clamp(st * (0.9 + rng() * 0.3), 0.8, 2.4);
+      }
+      // 脚
+      let mode;
+      const q = rng();
+      if (e > 1.4) mode = q < 0.45 ? 'kick' : q < 0.75 ? 'run' : 'oneleg';
+      else if (curv > 0.8) mode = q < 0.5 ? 'cross' : q < 0.8 ? 'squat' : 'oneleg';
+      else if (e < 0.7) mode = q < 0.5 ? 'squat' : 'stand';
+      else mode = LEGMODES[Math.floor(q * LEGMODES.length)];
+      const side = (cosd >= 0) !== !!variant ? 'R' : 'L', ks = side === 'R' ? -1 : 1;
+      const tL = BI.thighL, sL = BI.shinL, tR = BI.thighR, sR = BI.shinR;
+      switch (mode) {
+        case 'stand': p.b[tL] = r() * 0.3; p.b[tR] = r() * 0.3; p.b[sL] = r() * 0.3; p.b[sR] = r() * 0.3; break;
+        case 'kick': {
+          const t = side === 'R' ? tR : tL, s = side === 'R' ? sR : sL;
+          p.b[t] = ks * (0.9 + 0.5 * e); p.b[s] = -ks * (rng() * 0.8);
+          p.b[side === 'R' ? tL : tR] = -ks * 0.25; break;
+        }
+        case 'squat': p.b[tL] = 0.95; p.b[sL] = -1.4; p.b[tR] = -0.95; p.b[sR] = 1.4; p.ry += 45 * U; break;
+        case 'run': { const a = 0.6 + 0.4 * e; p.b[tL] = a * ks; p.b[sL] = -0.9; p.b[tR] = a * ks * 0.6; p.b[sR] = 1.0; break; }
+        case 'cross': p.b[tL] = -0.45; p.b[tR] = 0.45; p.b[sL] = 0.2; p.b[sR] = -0.2; break;
+        case 'oneleg': {
+          const t = side === 'R' ? tR : tL, s = side === 'R' ? sR : sL;
+          p.b[t] = ks * 1.5; p.b[s] = -ks * 1.9; break;
+        }
+      }
+      const ls = 1 + Math.max(0, e - 1.1) * 0.35 + (burst ? rng() * 0.3 : 0);
+      for (const k of [tL, sL, tR, sR]) p.s[k] = clamp(ls, 0.9, 1.8);
+      // カメラ：荒ぶり時はズーム・寄り
+      p.cz = 1 + rng() * 0.12 + (burst ? 0.35 + rng() * 0.5 : 0) + (ch.sharp >= 2 ? 0.2 : 0);
+      p.cr = r() * 0.25 * e;
+      if (burst || rng() < 0.2) {
+        const fj = [J.headTop, J.neck, J.handL, J.handR, J.chest][Math.floor(rng() * 5)];
+        p.cfx = (fj[0] - J.hip[0]) * 0.55; p.cfy = (fj[1] - J.mid[1]) * 0.55;
+      }
+      return p;
+    };
+
+    if (loops > 0.7) spinAcc += sgn * TAU;           // 旋回 → その場回転
+    const lead = ch.dir;
+    if (burst) {
+      const p1 = mk(0); prev = p1;
+      const p2 = mk(1); prev = p2;
+      kfs.push({ pose: p1, dur: beat / 2, e, burst, spin: loops > 0.7, chunk: ci, dir: lead, part: 0 });
+      kfs.push({ pose: p2, dur: beat / 2, e, burst, spin: false, chunk: ci, dir: lead + 1, part: 1 });
+    } else {
+      const p1 = mk(0); prev = p1;
+      kfs.push({ pose: p1, dur: beat, e, burst, spin: loops > 0.7, chunk: ci, dir: lead, part: 0 });
+    }
+  });
+  const starts = []; let acc = 0;
+  for (const k of kfs) { starts.push(acc); acc += k.dur; }
+  return { kfs, starts, total: acc, beat, bpm: an.bpm };
+}
+
+function lerpPose(a, b, t, wrapTo) {
+  const p = neutralPose();
+  const ang = (x, y) => { if (wrapTo) y = y + TAU * Math.round((x - y) / TAU); return lerp(x, y, t); };
+  p.rx = lerp(a.rx, b.rx, t); p.ry = lerp(a.ry, b.ry, t);
+  p.rot = ang(a.rot, b.rot); p.cr = lerp(a.cr, b.cr, t);
+  p.cz = lerp(a.cz, b.cz, t); p.cfx = lerp(a.cfx, b.cfx, t); p.cfy = lerp(a.cfy, b.cfy, t);
+  for (let i = 0; i < NB; i++) { p.b[i] = ang(a.b[i], b.b[i]); p.s[i] = lerp(a.s[i], b.s[i], t); }
+  return p;
+}
+function snapEase(x, snap, over) {
+  if (x >= snap) return 1;
+  const u = x / snap;
+  if (!over) return 1 - Math.pow(1 - u, 3);
+  const c = 1.9; return 1 + (c + 1) * Math.pow(u - 1, 3) + c * Math.pow(u - 1, 2);
+}
+
+/* ============================================================
+   ステージ描画
+   ============================================================ */
+const stage = $('#stage');
+const { ctx: sc } = fitCanvas(stage, SW, SH, 2);
+const BG = '#f6f4f7';
+let play = null, rafId = 0;
+
+function camera(J, pose) {
+  const footY = Math.max(J.footL[1], J.footR[1]);
+  const bodyH = Math.max(80, footY - J.headTop[1]);
+  const base = SH * 0.78 / bodyH;
+  const cx = J.hip[0] + pose.rx * 0.6 + pose.cfx, cy = (J.headTop[1] + footY) / 2 + pose.ry * 0.5 + pose.cfy;
+  return { base, cx, cy };
+}
+function applyCam(ctx, cam, pose, shake) {
+  ctx.translate(SW / 2 + shake[0], SH / 2 + shake[1]);
+  ctx.rotate(pose.cr);
+  ctx.scale(cam.base * pose.cz, cam.base * pose.cz);
+  ctx.translate(-cam.cx, -cam.cy);
+}
+function drawSkinned(ctx, sk, boil, fid, base) {
+  let si = 0;
+  const wk = Math.pow(base || 1, -0.6); // 小さく描いた絵を拡大しても線が太くなりすぎないように
+  for (const s of sk.strokes) {
+    si++;
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = s.width * wk * (boil ? 0.9 + 0.2 * Math.abs(Math.sin(fid * 1.9 + si)) : 1);
+    if (s.n === 1) {
+      ctx.beginPath(); ctx.arc(s.xs[0], s.ys[0], s.width * wk / 2, 0, TAU); ctx.fillStyle = s.color; ctx.fill(); continue;
+    }
+    ctx.beginPath();
+    const ph = fid * 2.13 + si * 0.77, amp = boil ? 1.6 : 0;
+    for (let i = 0; i < s.n; i++) {
+      const jx = amp * (Math.sin(i * 0.21 + ph) + 0.6 * Math.sin(i * 0.053 + ph * 1.7));
+      const jy = amp * (Math.cos(i * 0.19 + ph * 1.3) + 0.6 * Math.cos(i * 0.061 + ph * 0.9));
+      if (i === 0) ctx.moveTo(s.xs[i] + jx, s.ys[i] + jy); else ctx.lineTo(s.xs[i] + jx, s.ys[i] + jy);
+    }
+    ctx.stroke();
+  }
+}
+function watermark(ctx) {
+  ctx.save(); ctx.setTransform(stageScale(), 0, 0, stageScale(), 0, 0);
+  ctx.font = '900 16px sans-serif'; ctx.fillStyle = 'rgba(29,27,32,.35)'; ctx.textAlign = 'right';
+  ctx.fillText('GEDDAN DRAW', SW - 12, SH - 12); ctx.restore();
+}
+function stageScale() { return stage.width / SW; }
+
+function drawStill() {
+  const ctx = sc, d = stageScale();
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, SW, SH);
+  $('#hud').textContent = '';
+  if (!state.strokes.length) {
+    ctx.fillStyle = 'rgba(80,70,95,.6)'; ctx.font = '22px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('① キャラ と ② 線 を描いて ▶ 踊らせる', SW / 2, SH / 2);
+    ctx.font = '15px sans-serif';
+    ctx.fillText('（まずは「サンプルキャラ」「サンプル線」でもOK）', SW / 2, SH / 2 + 32);
+    return;
+  }
+  const sk = prepareSkin(state.strokes, state.joints);
+  const pose = neutralPose();
+  const F = fk(pose, state.joints, sk.R);
+  skin(sk, F);
+  const cam = camera(state.joints, pose);
+  ctx.save(); applyCam(ctx, cam, pose, [0, 0]);
+  drawSkinned(ctx, sk, false, 0, cam.base); ctx.restore();
+  watermark(ctx);
+}
+
+function startDance(keepTime) {
+  if (!state.strokes.length) { msg('先に①でキャラを描いてね（サンプルキャラでもOK）'); return false; }
+  if (!state.analysis) { msg(state.line.length ? '線が短すぎます。もっと長く描いてね' : '②で一筆書きの線を描いてね（サンプル線でもOK）'); return false; }
+  msg('');
+  const dance = buildDance(state.analysis, state.joints);
+  const sk = prepareSkin(state.strokes, state.joints);
+  const t0 = keepTime && play ? play.t0 : performance.now();
+  play = { ...dance, sk, J: state.joints, t0, lastFid: -1, lastK: -1, lastHB: -1, hist: [], parts: [], kStart: 0, an: state.analysis };
+  const d = stageScale(); sc.setTransform(d, 0, 0, d, 0, 0); sc.fillStyle = BG; sc.fillRect(0, 0, SW, SH);
+  $('#playBtn').textContent = '■ 停止'; $('#playBtn').classList.add('stop');
+  if (state.sound) ensureAudio();
+  if (!keepTime) { const r = stage.getBoundingClientRect(); if (r.top < 0 || r.bottom > innerHeight) stage.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  cancelAnimationFrame(rafId); rafId = requestAnimationFrame(frame);
+  return true;
+}
+function stopDance() {
+  play = null; cancelAnimationFrame(rafId);
+  $('#playBtn').textContent = '▶ 踊らせる'; $('#playBtn').classList.remove('stop');
+  $('#shout').classList.remove('show');
+  renderLine(); drawStill();
+}
+function frame(now) {
+  if (!play) return;
+  rafId = requestAnimationFrame(frame);
+  const t = (now - play.t0) / 1000;
+  audioTick(t);
+  const fps = state.koma ? 12 : 60;
+  const fid = Math.floor(t * fps);
+  if (fid === play.lastFid) return;
+  play.lastFid = fid;
+  renderDance(state.koma ? fid / fps : t, fid);
+}
+function renderDance(t, fid) {
+  const P = play, ctx = sc, d = stageScale();
+  const lt = t % P.total;
+  let k = 0; while (k + 1 < P.kfs.length && P.starts[k + 1] <= lt) k++;
+  const kf = P.kfs[k], prevKf = P.kfs[(k - 1 + P.kfs.length) % P.kfs.length];
+  const frac = (lt - P.starts[k]) / kf.dur;
+  const snap = clamp(0.5 - kf.e * 0.13, 0.16, 0.45);
+  const ez = snapEase(frac, snap, kf.e > 1.1);
+  const pose = lerpPose(prevKf.pose, kf.pose, ez, k === 0);
+  // 決めポーズ中の小刻みな震え
+  if (frac > snap) {
+    const w = 0.035 * kf.e;
+    pose.rot += Math.sin(t * 31) * w; pose.b[BI.head] += Math.sin(t * 23 + 1) * w * 2;
+    pose.b[BI.farmL] += Math.sin(t * 27) * w * 2; pose.b[BI.farmR] += Math.cos(t * 29) * w * 2;
+  }
+  const F = fk(pose, P.J, P.sk.R);
+  skin(P.sk, F);
+
+  // キーフレーム切替：エフェクト・線ハイライト・音
+  if (k !== P.lastK) {
+    P.lastK = k; P.kStart = t;
+    $('#hud').textContent = `BEAT ${kf.chunk + 1}/${P.an.chunks.length} · ${P.bpm} BPM`;
+    $('#shout').textContent = kf.spin ? 'グルグル！' : '荒ぶり！';
+    $('#shout').classList.toggle('show', kf.burst || kf.spin);
+    if (kf.e > 1.0 || kf.burst) {
+      const ends = [F[BI.farmL].B, F[BI.farmR].B, F[BI.shinL].B, F[BI.shinR].B];
+      for (let i = 0; i < (kf.burst ? 3 : 1); i++) {
+        const q = ends[(k * 7 + i * 3) % 4];
+        P.parts.push({ x: q[0], y: q[1], born: t, ang: (k * 2.4 + i * 1.7) % TAU, kind: (k + i) % 2 });
+      }
+    }
+    if (state.sound) noteFor(kf);
+  }
+  if (fid % 2 === 0 || !state.koma) renderLine(kf.chunk, kf.part ? 0.5 + frac / 2 : (kf.burst ? frac / 2 : frac));
+
+  // 背景（半透明で塗って残像を残す）
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.fillStyle = BG; ctx.globalAlpha = kf.e > 1.2 ? 0.5 : 0.7; ctx.fillRect(0, 0, SW, SH); ctx.globalAlpha = 1;
+
+  // 集中線
+  const sinceK = t - P.kStart;
+  if (kf.burst && sinceK < kf.dur * 0.6) {
+    const rnd = mulberry32(fid * 997 + 1);
+    ctx.fillStyle = 'rgba(29,27,32,.55)';
+    for (let i = 0; i < 46; i++) {
+      const a = rnd() * TAU, r0 = 260 + rnd() * 200, r1 = 560, w = 0.006 + rnd() * 0.012;
+      ctx.beginPath();
+      ctx.moveTo(SW / 2 + Math.cos(a) * r0, SH / 2 + Math.sin(a) * r0);
+      ctx.lineTo(SW / 2 + Math.cos(a + w) * r1, SH / 2 + Math.sin(a + w) * r1);
+      ctx.lineTo(SW / 2 + Math.cos(a - w) * r1, SH / 2 + Math.sin(a - w) * r1);
+      ctx.fill();
+    }
+  }
+
+  const cam = camera(P.J, pose);
+  const shakeAmt = kf.burst && frac < 0.5 ? 9 : kf.e > 1.2 ? 3 : 0;
+  const shake = [Math.sin(fid * 12.9) * shakeAmt, Math.cos(fid * 7.3) * shakeAmt];
+  ctx.save();
+  applyCam(ctx, cam, pose, shake);
+
+  // モーションライン（手足・頭の軌跡）
+  const ext = [F[BI.farmL].B, F[BI.farmR].B, F[BI.shinL].B, F[BI.shinR].B, F[BI.head].B];
+  P.hist.push(ext.map(p => [p[0], p[1]]));
+  if (P.hist.length > 5) P.hist.shift();
+  ctx.strokeStyle = 'rgba(29,27,32,.55)';
+  const sc0 = 1 / (cam.base * pose.cz);
+  for (let e = 0; e < ext.length; e++) {
+    const pts = P.hist.map(h => h[e]);
+    let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    if (L < 70 || pts.length < 3) continue;
+    const a = pts[0], b = pts[pts.length - 1];
+    const nx = -(b[1] - a[1]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1), ny = (b[0] - a[0]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1);
+    for (const [off, al] of [[-14, 0.7], [0, 0.45], [14, 0.3]]) {
+      ctx.globalAlpha = al; ctx.lineWidth = 3.2 * sc0 * 2;
+      ctx.beginPath();
+      pts.slice(0, -1).forEach((p, i) => {
+        const x = p[0] + nx * off, y = p[1] + ny * off;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  drawSkinned(ctx, P.sk, state.koma || kf.e > 1.2, fid, cam.base);
+
+  // 「((」マーク
+  P.parts = P.parts.filter(p => t - p.born < 0.45);
+  ctx.strokeStyle = 'rgba(29,27,32,.8)'; ctx.lineWidth = 4;
+  for (const p of P.parts) {
+    const g = 1 + (t - p.born) * 1.6;
+    ctx.save(); ctx.translate(p.x + Math.cos(p.ang) * 40 * g, p.y + Math.sin(p.ang) * 40 * g); ctx.rotate(p.ang);
+    for (let j = 0; j < 2; j++) {
+      ctx.beginPath();
+      if (p.kind) ctx.arc(j * 16, 0, 16, -0.9, 0.9); else ctx.arc(j * 14, 0, 12, -1.2, 1.2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+  watermark(ctx);
+}
+
+/* ============================================================
+   サウンド（WebAudioで合成した自作ビート）
+   ============================================================ */
+let actx = null, master = null, noiseBuf = null;
+function ensureAudio() {
+  try {
+    if (!actx) {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      master = actx.createGain(); master.gain.value = 0.45; master.connect(actx.destination);
+      noiseBuf = actx.createBuffer(1, actx.sampleRate * 0.3, actx.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (actx.state === 'suspended') actx.resume();
+  } catch (e) { actx = null; }
+}
+function env(g, t, a, peak, dec) {
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec);
+}
+function kick(t) {
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+  env(g, t, 0.003, 0.9, 0.25); o.connect(g).connect(master); o.start(t); o.stop(t + 0.3);
+}
+function noise(t, freq, type, peak, dec) {
+  const s = actx.createBufferSource(), f = actx.createBiquadFilter(), g = actx.createGain();
+  s.buffer = noiseBuf; f.type = type; f.frequency.value = freq;
+  env(g, t, 0.002, peak, dec); s.connect(f).connect(g).connect(master); s.start(t); s.stop(t + dec + 0.02);
+}
+function tone(t, freq, type, peak, dec, slideTo) {
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dec);
+  env(g, t, 0.004, peak, dec); o.connect(g).connect(master); o.start(t); o.stop(t + dec + 0.05);
+}
+function audioTick(t) {
+  if (!state.sound || !actx || !play) return;
+  const hb = Math.floor(t / (play.beat / 2));
+  if (hb === play.lastHB) return;
+  play.lastHB = hb;
+  const at = actx.currentTime + 0.01, i = hb % 8;
+  if (i === 0 || i === 4 || (i === 7 && play.an.arabu > 60)) kick(at);
+  if (i === 2 || i === 6) { noise(at, 1800, 'bandpass', 0.5, 0.14); tone(at, 190, 'triangle', 0.2, 0.08); }
+  noise(at, 7500, 'highpass', i % 2 ? 0.22 : 0.1, 0.04);
+}
+const SCALE = [0, 3, 5, 7, 10, 12, 15];
+function noteFor(kf) {
+  if (!actx) return;
+  const at = actx.currentTime + 0.01;
+  const idx = Math.floor(((wrap(kf.dir) + Math.PI) / TAU) * SCALE.length) % SCALE.length;
+  const f = 196 * Math.pow(2, (SCALE[idx] + (kf.e > 1.2 ? 12 : 0)) / 12);
+  tone(at, f, 'square', 0.09, Math.min(0.25, kf.dur * 0.8));
+  tone(at, f / 2, 'sawtooth', 0.06, Math.min(0.2, kf.dur * 0.6));
+  if (kf.burst && kf.part === 0) tone(at, 1400, 'sawtooth', 0.07, 0.22, 140);
+  if (kf.spin) tone(at, 300, 'triangle', 0.1, 0.35, 1200);
+}
+
+/* ============================================================
+   操作ボタン
+   ============================================================ */
+function msg(s) { $('#msg').textContent = s; }
+$('#playBtn').onclick = () => { if (play) stopDance(); else startDance(false); };
+$('#soundBtn').onclick = e => {
+  state.sound = !state.sound; e.target.classList.toggle('on', state.sound);
+  e.target.textContent = state.sound ? '🔊 音あり' : '🔇 音なし';
+  if (state.sound) ensureAudio();
+};
+$('#komaBtn').onclick = e => { state.koma = !state.koma; e.target.classList.toggle('on', state.koma); };
+$('#saveBtn').onclick = () => {
+  if (!play) drawStill();
+  const dt = new Date(), z = n => String(n).padStart(2, '0');
+  const name = `geddan-draw-${dt.getFullYear()}${z(dt.getMonth() + 1)}${z(dt.getDate())}-${z(dt.getHours())}${z(dt.getMinutes())}${z(dt.getSeconds())}.png`;
+  stage.toBlob(b => {
+    if (!b) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }, 'image/png');
+};
+
+renderChar(); renderLine(); showFeatures(); drawStill();
+</script>
+</body>
+</html>
