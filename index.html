@@ -39,8 +39,16 @@ button:disabled{opacity:.45;cursor:not-allowed}
 button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:800;font-size:16px;padding:10px 18px}
 button.primary.stop{background:var(--ink);border-color:var(--ink)}
-.swatches{display:flex;gap:4px}
-.sw{width:26px;height:26px;border-radius:50%;border:2px solid #fff;outline:1px solid var(--line);padding:0}
+.swatches{display:flex;flex-wrap:wrap;gap:5px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:0;border-radius:0;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.picker{position:relative;display:inline-block;cursor:pointer;
+  background:conic-gradient(red,#ff0,lime,cyan,blue,#f0f,red)}
+.picker input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
+.dotbox{display:inline-grid;place-items:center;width:24px;height:24px}
+#widthDot{display:block;border-radius:50%;outline:1px solid var(--line)}
+.sw{width:28px;height:28px;border-radius:50%;border:2px solid #fff;outline:1px solid var(--line);padding:0}
 .sw.sel{outline:3px solid var(--ink)}
 label.inline{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--sub)}
 input[type=range]{width:90px}
@@ -79,12 +87,20 @@ footer{margin-top:18px;font-size:12px;color:var(--sub)}
     <h2><span class="num">1</span><span class="ttl">キャラを描く</span> <small>頭・胴・腕・脚がガイドの位置だときれいに動く</small></h2>
     <canvas id="charPad" class="pad" aria-label="キャラクター描画キャンバス"></canvas>
     <div class="tools">
-      <div class="swatches" id="swatches"></div>
-      <label class="inline">太さ <input type="range" id="width" min="2" max="18" value="5"></label>
+      <div class="seg" role="group" aria-label="道具">
+        <button class="tool on" data-tool="pen">✏️ ペン</button>
+        <button class="tool" data-tool="fill">🪣 バケツ</button>
+        <button class="tool" data-tool="erase">🧽 消しゴム</button>
+      </div>
+      <label class="inline">太さ <input type="range" id="width" min="2" max="24" value="5"><span class="dotbox"><span id="widthDot"></span></span></label>
     </div>
     <div class="tools">
-      <button id="undo">↶ 1画戻す</button>
-      <button id="clearChar">消去</button>
+      <div class="swatches" id="swatches"><label class="sw picker" id="pickLabel" title="自由に色を選ぶ"><input type="color" id="colorPick" value="#1d1b20" aria-label="自由色"></label></div>
+    </div>
+    <div class="tools">
+      <button id="undo" disabled>↶ 戻す</button>
+      <button id="redo" disabled>↷ やり直す</button>
+      <button id="clearChar">全部消す</button>
       <button id="sampleChar">サンプルキャラ</button>
       <button id="guideBtn" class="on">ガイド</button>
       <button id="jointBtn" title="関節の点をドラッグして、絵の手足の位置に合わせる">関節を調整</button>
@@ -243,16 +259,18 @@ function fk(pose, J, R) {
    スキニング：描いた線の各点を近い骨に紐付け、骨と一緒に変形
    （領域を切らずに滑らかに曲がる＝ゴムのような手足）
    ============================================================ */
-function prepareSkin(strokes, J) {
+function prepareSkin(items, J) {
   const R = restInfo(J);
+  items = items.filter(isBody);
+  const pathsOf = s => s.type === 'fill' ? s.loops.map(L => [...L, L[0]]) : [s.pts];
   let total = 0;
-  for (const s of strokes) for (let i = 1; i < s.pts.length; i++)
-    total += Math.hypot(s.pts[i][0] - s.pts[i - 1][0], s.pts[i][1] - s.pts[i - 1][1]);
-  const step = clamp(total / 5000, 2.5, 8); // 点数を制御して低スペックでも軽く
+  for (const s of items) for (const P of pathsOf(s)) for (let i = 1; i < P.length; i++)
+    total += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+  const step = clamp(total / 6000, 2.5, 8); // 点数を制御して低スペックでも軽く
   const out = [];
   const d2 = new Float32Array(NB);
-  for (const s of strokes) {
-    const pts = resample(s.pts, step);
+  const bindPath = (src) => {
+    const pts = resample(src, step);
     const n = pts.length;
     const bi = new Uint8Array(n * 3), w = new Float32Array(n * 3),
       al = new Float32Array(n * 3), pe = new Float32Array(n * 3);
@@ -266,7 +284,7 @@ function prepareSkin(strokes, J) {
         d2[k] = qx * qx + qy * qy;
       }
       // 近い順に3本
-      const idx = [0, 1, 2].map(() => -1);
+      const idx = [-1, -1, -1];
       for (let k = 0; k < NB; k++) {
         for (let j = 0; j < 3; j++) {
           if (idx[j] < 0 || d2[k] < d2[idx[j]]) { idx.splice(j, 0, k); idx.length = 3; break; }
@@ -282,12 +300,15 @@ function prepareSkin(strokes, J) {
         pe[o] = -dx * r.uy + dy * r.ux;
       }
     }
-    out.push({ color: s.color, width: s.width, n, bi, w, al, pe, xs: new Float32Array(n), ys: new Float32Array(n) });
+    return { n, bi, w, al, pe, xs: new Float32Array(n), ys: new Float32Array(n) };
+  };
+  for (const s of items) {
+    out.push({ fill: s.type === 'fill', color: s.color, width: s.width, paths: pathsOf(s).map(bindPath) });
   }
-  return { strokes: out, R };
+  return { items: out, R };
 }
 function skin(sk, F) {
-  for (const s of sk.strokes) {
+  for (const it of sk.items) for (const s of it.paths) {
     for (let i = 0; i < s.n; i++) {
       let x = 0, y = 0;
       for (let j = 0; j < 3; j++) {
@@ -308,11 +329,11 @@ function skin(sk, F) {
 /* ============================================================
    状態
    ============================================================ */
-const COLORS = ['#1d1b20', '#e8344e', '#2f6bff', '#14a36b', '#ff9a1f', '#9b4dff'];
+const COLORS = ['#1d1b20', '#ffffff', '#8a8590', '#e8344e', '#ff8fb1', '#ff9a1f', '#ffd23f', '#14a36b', '#7bd389', '#2f6bff', '#6ec6ff', '#9b4dff', '#8b5a2b', '#f2c9a0'];
 const state = {
   strokes: [], color: COLORS[0], width: 5,
   joints: JSON.parse(JSON.stringify(DEFAULT_JOINTS)),
-  guide: true, jointMode: false,
+  guide: true, jointMode: false, tool: 'pen',
   line: [], analysis: null,
   sound: true, koma: true,
 };
@@ -361,11 +382,35 @@ function strokePath(ctx, pts) {
   }
   const l = pts[pts.length - 1]; ctx.lineTo(l[0], l[1]); ctx.stroke();
 }
+/* ---- 描画アイテム：stroke（線）/ fill（バケツ塗り）/ bg（背景色） ---- */
+const isStroke = s => !s.type || s.type === 'stroke';
+const isBody = s => s.type !== 'bg';
+const hasBody = () => state.strokes.some(isBody);
+function bgColor() {
+  for (let i = state.strokes.length - 1; i >= 0; i--) if (state.strokes[i].type === 'bg') return state.strokes[i].color;
+  return null;
+}
+function fillLoops(ctx, loops) {
+  ctx.beginPath();
+  for (const L of loops) {
+    ctx.moveTo(L[0][0], L[0][1]);
+    for (let i = 1; i < L.length; i++) ctx.lineTo(L[i][0], L[i][1]);
+    ctx.closePath();
+  }
+  ctx.fill('evenodd');
+}
+// 塗り → 線 の順に描く（塗りは常に線の下）
+function drawItems(ctx, items) {
+  for (const s of items) if (s.type === 'fill') { ctx.fillStyle = s.color; fillLoops(ctx, s.loops); }
+  for (const s of items) if (isStroke(s)) { ctx.strokeStyle = s.color; ctx.lineWidth = s.width; strokePath(ctx, s.pts); }
+}
 function renderChar() {
   const c = charC;
   c.clearRect(0, 0, PW, PH);
+  const bg = bgColor();
+  if (bg) { c.fillStyle = bg; c.fillRect(0, 0, PW, PH); }
   if (state.guide) drawGuide(c, state.joints, false);
-  for (const s of state.strokes) { c.strokeStyle = s.color; c.lineWidth = s.width; strokePath(c, s.pts); }
+  drawItems(c, state.strokes);
   if (state.jointMode) {
     drawGuide(c, state.joints, true);
     for (const [k, p] of Object.entries(state.joints)) {
@@ -374,12 +419,161 @@ function renderChar() {
       c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
     }
   }
-  if (!state.strokes.length && !state.jointMode) {
+  if (!hasBody() && !state.jointMode) {
     c.fillStyle = 'rgba(80,70,95,.55)'; c.font = '17px sans-serif'; c.textAlign = 'center';
     c.fillText('ここにキャラを描いてね', PW / 2, 26);
   }
 }
-let drawing = null, dragJoint = null;
+
+/* ---- 元に戻す / やり直す ---- */
+const hist = { undo: [], redo: [] };
+function snapshot() {
+  hist.undo.push(state.strokes.slice());
+  if (hist.undo.length > 100) hist.undo.shift();
+  hist.redo.length = 0; updateUndoBtns();
+}
+function updateUndoBtns() {
+  $('#undo').disabled = !hist.undo.length; $('#redo').disabled = !hist.redo.length;
+}
+function undo() {
+  if (!hist.undo.length) return;
+  hist.redo.push(state.strokes); state.strokes = hist.undo.pop();
+  updateUndoBtns(); renderChar(); charChanged();
+}
+function redo() {
+  if (!hist.redo.length) return;
+  hist.undo.push(state.strokes); state.strokes = hist.redo.pop();
+  updateUndoBtns(); renderChar(); charChanged();
+}
+
+/* ---- バケツ塗り：同じ色の領域を探して、輪郭を「骨に付いて動く塗り」に変換 ---- */
+function dilate(m, W, H, r) {
+  const t = new Uint8Array(W * H), o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!m[y * W + x]) continue;
+    for (let k = Math.max(0, x - r); k <= Math.min(W - 1, x + r); k++) t[y * W + k] = 1;
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!t[y * W + x]) continue;
+    for (let k = Math.max(0, y - r); k <= Math.min(H - 1, y + r); k++) o[k * W + x] = 1;
+  }
+  return o;
+}
+function traceLoops(m, W, H, cell) {
+  // 塗られたマスの境界辺をつないで閉じた輪郭（穴も含む）を作る
+  const V = W + 1, out = new Map();
+  const add = (a, b) => { if (!out.has(a)) out.set(a, []); out.get(a).push(b); };
+  const on = (x, y) => x >= 0 && y >= 0 && x < W && y < H && m[y * W + x];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!m[y * W + x]) continue;
+    if (!on(x, y - 1)) add(y * V + x, y * V + x + 1);
+    if (!on(x + 1, y)) add(y * V + x + 1, (y + 1) * V + x + 1);
+    if (!on(x, y + 1)) add((y + 1) * V + x + 1, (y + 1) * V + x);
+    if (!on(x - 1, y)) add((y + 1) * V + x, y * V + x);
+  }
+  const loops = [];
+  for (const [start, list] of out) {
+    while (list.length) {
+      const L = []; let v = start;
+      do {
+        const nx = out.get(v); if (!nx || !nx.length) break;
+        const w = nx.pop(); L.push(v); v = w;
+      } while (v !== start);
+      if (L.length < 8) continue;
+      // 角だけ残す → なめらかに（Chaikin）
+      let pts = L.map(k => [(k % V) * cell, Math.floor(k / V) * cell]);
+      pts = pts.filter((p, i) => {
+        const a = pts[(i - 1 + pts.length) % pts.length], b = pts[(i + 1) % pts.length];
+        return (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]) !== 0;
+      });
+      for (let it = 0; it < 2 && pts.length > 2; it++) {
+        const q = [];
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i], b = pts[(i + 1) % pts.length];
+          q.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+        }
+        pts = q;
+      }
+      if (pts.length >= 4) loops.push(pts);
+    }
+  }
+  return loops;
+}
+function bucketFill(px, py, color) {
+  const W = PW, H = PH;
+  const off = document.createElement('canvas'); off.width = W; off.height = H;
+  const o = off.getContext('2d'); o.lineCap = 'round'; o.lineJoin = 'round';
+  drawItems(o, state.strokes.filter(isBody));
+  const d = o.getImageData(0, 0, W, H).data;
+  const sx = clamp(Math.floor(px), 0, W - 1), sy = clamp(Math.floor(py), 0, H - 1), si = (sy * W + sx) * 4;
+  const sr = d[si], sg = d[si + 1], sb = d[si + 2], sa = d[si + 3];
+  const wall = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    const a = d[i * 4 + 3];
+    let same;
+    if (sa < 60) same = a < 60;
+    else same = a > 200 && Math.abs(d[i * 4] - sr) + Math.abs(d[i * 4 + 1] - sg) + Math.abs(d[i * 4 + 2] - sb) < 48;
+    wall[i] = same ? 0 : 1;
+  }
+  const GAP = 2; // 小さなすき間は閉じたものとして扱う
+  const w2 = dilate(wall, W, H, GAP);
+  if (w2[sy * W + sx]) { msg('線の上ではなく、線で囲まれた内側をタップしてね'); return; }
+  const reg = new Uint8Array(W * H), stack = [sy * W + sx];
+  let count = 0, edge = false;
+  reg[sy * W + sx] = 1;
+  while (stack.length) {
+    const i = stack.pop(), x = i % W, y = (i - x) / W; count++;
+    if (x === 0 || y === 0 || x === W - 1 || y === H - 1) edge = true;
+    const nb = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1];
+    for (const j of nb) if (j >= 0 && !reg[j] && !w2[j]) { reg[j] = 1; stack.push(j); }
+  }
+  snapshot();
+  if (edge) {
+    // 外側（キャンバスの端につながる領域）は背景色にする
+    state.strokes.push({ type: 'bg', color });
+    msg('外側をタップしたので背景色にしました（ダンス画面の背景にもなります）');
+  } else {
+    if (count < 30) { hist.undo.pop(); updateUndoBtns(); msg('塗る場所が小さすぎます'); return; }
+    const grown = dilate(reg, W, H, GAP + 1);
+    // 2pxマスに縮小して輪郭化
+    const CW = W / 2, CH = H / 2, m2 = new Uint8Array(CW * CH);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (grown[y * W + x]) m2[(y >> 1) * CW + (x >> 1)] = 1;
+    const loops = traceLoops(m2, CW, CH, 2);
+    if (!loops.length) { hist.undo.pop(); updateUndoBtns(); return; }
+    state.strokes.push({ type: 'fill', color, loops });
+    msg('');
+  }
+  renderChar(); charChanged();
+}
+
+/* ---- 消しゴム：触れた線（または塗り）をまるごと消す ---- */
+function inLoops(loops, x, y) {
+  let inside = false;
+  for (const L of loops) for (let i = 0, j = L.length - 1; i < L.length; j = i++) {
+    const a = L[i], b = L[j];
+    if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+function eraseAt(p) {
+  let removed = false;
+  state.strokes = state.strokes.filter(s => {
+    if (!isStroke(s)) return true;
+    const r = s.width / 2 + 10;
+    const hit = s.pts.some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < r);
+    if (hit) removed = true;
+    return !hit;
+  });
+  if (!removed) {
+    for (let i = state.strokes.length - 1; i >= 0; i--) {
+      const s = state.strokes[i];
+      if (s.type === 'fill' && inLoops(s.loops, p[0], p[1])) { state.strokes.splice(i, 1); removed = true; break; }
+    }
+  }
+  return removed;
+}
+
+let drawing = null, dragJoint = null, erasing = null;
 charPad.addEventListener('pointerdown', e => {
   e.preventDefault();
   charPad.setPointerCapture(e.pointerId);
@@ -391,13 +585,22 @@ charPad.addEventListener('pointerdown', e => {
     }
     dragJoint = best; renderChar(); return;
   }
-  drawing = { color: state.color, width: state.width, pts: [p] };
+  if (state.tool === 'fill') { bucketFill(p[0], p[1], state.color); return; }
+  if (state.tool === 'erase') {
+    snapshot(); erasing = { any: eraseAt(p) }; renderChar(); return;
+  }
+  snapshot();
+  drawing = { type: 'stroke', color: state.color, width: state.width, pts: [p] };
   state.strokes.push(drawing); renderChar();
 });
 charPad.addEventListener('pointermove', e => {
   if (dragJoint) {
     const p = evPos(charPad, e, PW, PH);
     state.joints[dragJoint] = [clamp(p[0], 0, PW), clamp(p[1], 0, PH)]; renderChar(); return;
+  }
+  if (erasing) {
+    if (eraseAt(evPos(charPad, e, PW, PH))) { erasing.any = true; renderChar(); }
+    return;
   }
   if (!drawing) return;
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
@@ -409,6 +612,10 @@ charPad.addEventListener('pointermove', e => {
 });
 function endChar() {
   if (dragJoint) { dragJoint = null; renderChar(); charChanged(); return; }
+  if (erasing) {
+    if (!erasing.any) { hist.undo.pop(); updateUndoBtns(); }
+    erasing = null; charChanged(); return;
+  }
   if (!drawing) return;
   drawing = null; charChanged();
 }
@@ -416,16 +623,44 @@ charPad.addEventListener('pointerup', endChar);
 charPad.addEventListener('pointercancel', endChar);
 
 // ツール
+function setTool(t) {
+  state.tool = t;
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  charPad.style.cursor = t === 'fill' ? 'cell' : t === 'erase' ? 'not-allowed' : 'crosshair';
+  if (state.jointMode) $('#jointBtn').click();
+  msg(t === 'fill' ? '線で囲まれた所をタップで塗る／外側をタップで背景色' : t === 'erase' ? 'なぞった線・タップした塗りを消します' : '');
+}
+document.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 const swWrap = $('#swatches');
-COLORS.forEach((c, i) => {
+function setColor(c, fromPicker) {
+  state.color = c;
+  swWrap.querySelectorAll('.sw').forEach(x => x.classList.toggle('sel', x.dataset.c === c));
+  $('#pickLabel').classList.toggle('sel', !!fromPicker);
+  $('#pickLabel').style.background = fromPicker ? c : '';
+  if (!fromPicker) $('#colorPick').value = c;
+  updateDot();
+}
+COLORS.forEach((c) => {
   const b = document.createElement('button');
-  b.className = 'sw' + (i === 0 ? ' sel' : ''); b.style.background = c; b.title = c; b.setAttribute('aria-label', '色 ' + c);
-  b.onclick = () => { state.color = c; swWrap.querySelectorAll('.sw').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); };
-  swWrap.appendChild(b);
+  b.className = 'sw'; b.style.background = c; b.dataset.c = c; b.title = c; b.setAttribute('aria-label', '色 ' + c);
+  b.onclick = () => setColor(c, false);
+  swWrap.insertBefore(b, $('#pickLabel'));
 });
-$('#width').oninput = e => state.width = +e.target.value;
-$('#undo').onclick = () => { state.strokes.pop(); renderChar(); charChanged(); };
-$('#clearChar').onclick = () => { state.strokes = []; renderChar(); charChanged(); };
+$('#colorPick').oninput = e => setColor(e.target.value, true);
+function updateDot() {
+  const d = $('#widthDot'), w = Math.max(3, state.width * 0.8);
+  d.style.width = d.style.height = w + 'px'; d.style.background = state.color;
+}
+$('#width').oninput = e => { state.width = +e.target.value; updateDot(); };
+$('#undo').onclick = undo;
+$('#redo').onclick = redo;
+window.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+});
+$('#clearChar').onclick = () => { if (!state.strokes.length) return; snapshot(); state.strokes = []; renderChar(); charChanged(); };
 $('#guideBtn').onclick = e => { state.guide = !state.guide; e.target.classList.toggle('on', state.guide); renderChar(); };
 $('#jointBtn').onclick = e => {
   state.jointMode = !state.jointMode; e.target.classList.toggle('on', state.jointMode);
@@ -434,9 +669,9 @@ $('#jointBtn').onclick = e => {
   renderChar();
 };
 $('#fitBtn').onclick = () => {
-  if (!state.strokes.length) { msg('先にキャラを描いてください'); return; }
+  if (!hasBody()) { msg('先にキャラを描いてください'); return; }
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const s of state.strokes) for (const p of s.pts) {
+  for (const s of state.strokes) if (isBody(s)) for (const p of (s.type === 'fill' ? s.loops.flat() : s.pts)) {
     x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
   }
   const D = DEFAULT_JOINTS;
@@ -460,10 +695,10 @@ function sampleCharacter() {
       const r = lerp(r0, r1, i / (n - 1));
       L.push([pts[i][0] - dy * r, pts[i][1] + dx * r]); Rr.push([pts[i][0] + dy * r, pts[i][1] - dx * r]);
     }
-    if (!capEnd) return [wob(L), wob(Rr)];
+    if (!capEnd) return [wob([...L, ...Rr.reverse(), L[0]])]; // 閉じた形（バケツで塗れる）
     const e = pts[n - 1], p = pts[n - 2], ang = Math.atan2(e[1] - p[1], e[0] - p[0]), cap = [];
     for (let k = 1; k < 10; k++) { const t = ang + Math.PI / 2 - Math.PI * k / 10; cap.push([e[0] + Math.cos(t) * r1, e[1] + Math.sin(t) * r1]); }
-    return [wob([...L, ...cap, ...Rr.reverse()])];
+    return [wob([...L, ...cap, ...Rr.reverse(), L[0]])];
   }
   const add = (pts, w = W) => S.push({ color: col, width: w, pts });
   // 頭＋ネコ耳
@@ -491,7 +726,7 @@ function sampleCharacter() {
   }
   return S;
 }
-$('#sampleChar').onclick = () => { state.joints = JSON.parse(JSON.stringify(DEFAULT_JOINTS)); state.strokes = sampleCharacter(); renderChar(); charChanged(); };
+$('#sampleChar').onclick = () => { snapshot(); state.joints = JSON.parse(JSON.stringify(DEFAULT_JOINTS)); state.strokes = sampleCharacter(); renderChar(); charChanged(); };
 
 /* ============================================================
    ② 一筆書き線キャンバス＋特徴抽出
@@ -846,7 +1081,7 @@ function snapEase(x, snap, over) {
    ============================================================ */
 const stage = $('#stage');
 const { ctx: sc } = fitCanvas(stage, SW, SH, 2);
-const BG = '#f6f4f7';
+const stageBG = () => bgColor() || '#f6f4f7';
 let play = null, rafId = 0;
 
 function camera(J, pose) {
@@ -863,38 +1098,49 @@ function applyCam(ctx, cam, pose, shake) {
   ctx.translate(-cam.cx, -cam.cy);
 }
 function drawSkinned(ctx, sk, boil, fid, base) {
-  let si = 0;
   const wk = Math.pow(base || 1, -0.6); // 小さく描いた絵を拡大しても線が太くなりすぎないように
-  for (const s of sk.strokes) {
-    si++;
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = s.width * wk * (boil ? 0.9 + 0.2 * Math.abs(Math.sin(fid * 1.9 + si)) : 1);
-    if (s.n === 1) {
-      ctx.beginPath(); ctx.arc(s.xs[0], s.ys[0], s.width * wk / 2, 0, TAU); ctx.fillStyle = s.color; ctx.fill(); continue;
-    }
-    ctx.beginPath();
-    const ph = fid * 2.13 + si * 0.77, amp = boil ? 1.6 : 0;
+  const amp = boil ? 1.6 : 0;
+  const trace = (s, ph, close) => {
     for (let i = 0; i < s.n; i++) {
       const jx = amp * (Math.sin(i * 0.21 + ph) + 0.6 * Math.sin(i * 0.053 + ph * 1.7));
       const jy = amp * (Math.cos(i * 0.19 + ph * 1.3) + 0.6 * Math.cos(i * 0.061 + ph * 0.9));
       if (i === 0) ctx.moveTo(s.xs[i] + jx, s.ys[i] + jy); else ctx.lineTo(s.xs[i] + jx, s.ys[i] + jy);
     }
-    ctx.stroke();
-  }
+    if (close) ctx.closePath();
+  };
+  // 塗り（線の下）
+  sk.items.forEach((it, si) => {
+    if (!it.fill) return;
+    ctx.fillStyle = it.color; ctx.beginPath();
+    it.paths.forEach((s, pi) => trace(s, fid * 2.13 + si * 0.77 + pi, true));
+    ctx.fill('evenodd');
+  });
+  // 線
+  sk.items.forEach((it, si) => {
+    if (it.fill) return;
+    const s = it.paths[0];
+    ctx.strokeStyle = it.color;
+    ctx.lineWidth = it.width * wk * (boil ? 0.9 + 0.2 * Math.abs(Math.sin(fid * 1.9 + si)) : 1);
+    if (s.n === 1) {
+      ctx.beginPath(); ctx.arc(s.xs[0], s.ys[0], it.width * wk / 2, 0, TAU); ctx.fillStyle = it.color; ctx.fill(); return;
+    }
+    ctx.beginPath(); trace(s, fid * 2.13 + si * 0.77, false); ctx.stroke();
+  });
 }
 function watermark(ctx) {
   ctx.save(); ctx.setTransform(stageScale(), 0, 0, stageScale(), 0, 0);
   ctx.font = '900 16px sans-serif'; ctx.fillStyle = 'rgba(29,27,32,.35)'; ctx.textAlign = 'right';
   ctx.fillText('GEDDAN DRAW', SW - 12, SH - 12); ctx.restore();
 }
+const J_footY = J => Math.max(J.footL[1], J.footR[1]);
 function stageScale() { return stage.width / SW; }
 
 function drawStill() {
   const ctx = sc, d = stageScale();
   ctx.setTransform(d, 0, 0, d, 0, 0);
-  ctx.fillStyle = BG; ctx.fillRect(0, 0, SW, SH);
+  ctx.fillStyle = stageBG(); ctx.fillRect(0, 0, SW, SH);
   $('#hud').textContent = '';
-  if (!state.strokes.length) {
+  if (!hasBody()) {
     ctx.fillStyle = 'rgba(80,70,95,.6)'; ctx.font = '22px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('① キャラ と ② 線 を描いて ▶ 踊らせる', SW / 2, SH / 2);
     ctx.font = '15px sans-serif';
@@ -912,14 +1158,14 @@ function drawStill() {
 }
 
 function startDance(keepTime) {
-  if (!state.strokes.length) { msg('先に①でキャラを描いてね（サンプルキャラでもOK）'); return false; }
+  if (!hasBody()) { msg('先に①でキャラを描いてね（サンプルキャラでもOK）'); return false; }
   if (!state.analysis) { msg(state.line.length ? '線が短すぎます。もっと長く描いてね' : '②で一筆書きの線を描いてね（サンプル線でもOK）'); return false; }
   msg('');
   const dance = buildDance(state.analysis, state.joints);
   const sk = prepareSkin(state.strokes, state.joints);
   const t0 = keepTime && play ? play.t0 : performance.now();
   play = { ...dance, sk, J: state.joints, t0, lastFid: -1, lastK: -1, lastHB: -1, hist: [], parts: [], kStart: 0, an: state.analysis };
-  const d = stageScale(); sc.setTransform(d, 0, 0, d, 0, 0); sc.fillStyle = BG; sc.fillRect(0, 0, SW, SH);
+  const d = stageScale(); sc.setTransform(d, 0, 0, d, 0, 0); sc.fillStyle = stageBG(); sc.fillRect(0, 0, SW, SH);
   $('#playBtn').textContent = '■ 停止'; $('#playBtn').classList.add('stop');
   if (state.sound) ensureAudio();
   if (!keepTime) { const r = stage.getBoundingClientRect(); if (r.top < 0 || r.bottom > innerHeight) stage.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
@@ -967,9 +1213,9 @@ function renderDance(t, fid) {
     $('#hud').textContent = `BEAT ${kf.chunk + 1}/${P.an.chunks.length} · ${P.bpm} BPM`;
     $('#shout').textContent = kf.spin ? 'グルグル！' : '荒ぶり！';
     $('#shout').classList.toggle('show', kf.burst || kf.spin);
-    if (kf.e > 1.0 || kf.burst) {
+    if (kf.burst && kf.part === 0) {
       const ends = [F[BI.farmL].B, F[BI.farmR].B, F[BI.shinL].B, F[BI.shinR].B];
-      for (let i = 0; i < (kf.burst ? 3 : 1); i++) {
+      for (let i = 0; i < 1; i++) {
         const q = ends[(k * 7 + i * 3) % 4];
         P.parts.push({ x: q[0], y: q[1], born: t, ang: (k * 2.4 + i * 1.7) % TAU, kind: (k + i) % 2 });
       }
@@ -980,7 +1226,7 @@ function renderDance(t, fid) {
 
   // 背景（半透明で塗って残像を残す）
   ctx.setTransform(d, 0, 0, d, 0, 0);
-  ctx.fillStyle = BG; ctx.globalAlpha = kf.e > 1.2 ? 0.5 : 0.7; ctx.fillRect(0, 0, SW, SH); ctx.globalAlpha = 1;
+  ctx.fillStyle = stageBG(); ctx.globalAlpha = kf.e > 1.2 ? 0.5 : 0.7; ctx.fillRect(0, 0, SW, SH); ctx.globalAlpha = 1;
 
   // 集中線
   const sinceK = t - P.kStart;
@@ -1003,25 +1249,27 @@ function renderDance(t, fid) {
   ctx.save();
   applyCam(ctx, cam, pose, shake);
 
-  // モーションライン（手足・頭の軌跡）
-  const ext = [F[BI.farmL].B, F[BI.farmR].B, F[BI.shinL].B, F[BI.shinR].B, F[BI.head].B];
+  // モーションライン：いちばん大きく動いた手足1本だけ、細く控えめに
+  const ext = [F[BI.farmL].B, F[BI.farmR].B, F[BI.shinL].B, F[BI.shinR].B];
   P.hist.push(ext.map(p => [p[0], p[1]]));
-  if (P.hist.length > 5) P.hist.shift();
-  ctx.strokeStyle = 'rgba(29,27,32,.55)';
-  const sc0 = 1 / (cam.base * pose.cz);
-  for (let e = 0; e < ext.length; e++) {
-    const pts = P.hist.map(h => h[e]);
-    let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-    if (L < 70 || pts.length < 3) continue;
-    const a = pts[0], b = pts[pts.length - 1];
-    const nx = -(b[1] - a[1]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1), ny = (b[0] - a[0]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1);
-    for (const [off, al] of [[-14, 0.7], [0, 0.45], [14, 0.3]]) {
-      ctx.globalAlpha = al; ctx.lineWidth = 3.2 * sc0 * 2;
-      ctx.beginPath();
-      pts.slice(0, -1).forEach((p, i) => {
-        const x = p[0] + nx * off, y = p[1] + ny * off;
-        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-      });
+  if (P.hist.length > 4) P.hist.shift();
+  const bodyH = Math.max(J_footY(P.J) - P.J.headTop[1], 80);
+  let best = -1, bestL = bodyH * 0.45; // 体の高さの半分近く動いたときだけ
+  for (let e = 0; e < ext.length && P.hist.length >= 3; e++) {
+    let L = 0;
+    for (let i = 1; i < P.hist.length; i++) L += Math.hypot(P.hist[i][e][0] - P.hist[i - 1][e][0], P.hist[i][e][1] - P.hist[i - 1][e][1]);
+    if (L > bestL) { bestL = L; best = e; }
+  }
+  if (best >= 0) {
+    const pts = P.hist.map(h => h[best]);
+    const a = pts[0], m = pts[Math.floor(pts.length / 2)], b = pts[pts.length - 1];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
+    const px = 1 / (cam.base * pose.cz); // 画面上1pxの太さ
+    ctx.strokeStyle = 'rgb(29,27,32)'; ctx.lineWidth = 2 * px;
+    for (const [off, al] of [[-7, 0.35], [7, 0.2]]) {
+      ctx.globalAlpha = al; ctx.beginPath();
+      ctx.moveTo(a[0] + nx * off, a[1] + ny * off);
+      ctx.quadraticCurveTo(m[0] + nx * off, m[1] + ny * off, lerp(m[0], b[0], 0.6) + nx * off, lerp(m[1], b[1], 0.6) + ny * off);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
@@ -1031,7 +1279,7 @@ function renderDance(t, fid) {
 
   // 「((」マーク
   P.parts = P.parts.filter(p => t - p.born < 0.45);
-  ctx.strokeStyle = 'rgba(29,27,32,.8)'; ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(29,27,32,.5)'; ctx.lineWidth = 3;
   for (const p of P.parts) {
     const g = 1 + (t - p.born) * 1.6;
     ctx.save(); ctx.translate(p.x + Math.cos(p.ang) * 40 * g, p.y + Math.sin(p.ang) * 40 * g); ctx.rotate(p.ang);
@@ -1127,6 +1375,7 @@ $('#saveBtn').onclick = () => {
   }, 'image/png');
 };
 
+setColor(COLORS[0], false); updateUndoBtns();
 renderChar(); renderLine(); showFeatures(); drawStill();
 </script>
 </body>
