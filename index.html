@@ -64,9 +64,15 @@ input[type=range]{width:90px}
 .stagewrap{position:relative}
 #stage{display:block;width:min(100%,calc(72vh * 1.5));margin:0 auto;aspect-ratio:3/2;background:var(--paper);border-radius:10px;border:1px solid var(--line)}
 #hud{position:absolute;left:10px;top:8px;font-size:13px;font-weight:700;color:var(--sub);pointer-events:none}
-#shout{position:absolute;right:12px;top:6px;font-size:clamp(18px,4vw,30px);font-weight:900;color:var(--accent);
-  transform:rotate(6deg);opacity:0;transition:opacity .15s;pointer-events:none}
-#shout.show{opacity:1}
+dialog#shareDlg{border:0;border-radius:16px;padding:16px;width:min(560px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;color:var(--ink)}
+dialog#shareDlg::backdrop{background:rgba(20,18,24,.55)}
+#shareDlg h3{margin:0 0 10px;font-size:18px}
+#shareVideo{display:block;width:100%;border-radius:10px;background:#000;max-height:46vh}
+#shareText{display:block;width:100%;margin-top:6px;font:inherit;font-size:14px;padding:8px;border:1px solid var(--line);border-radius:9px;resize:vertical}
+.snsLinks{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.snsLinks a{font-size:13px;text-decoration:none;color:#fff;border-radius:9px;padding:7px 12px;font-weight:700}
+.hint{font-size:12px;color:var(--sub);margin:8px 0 0}
+select{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 8px;max-width:100%}
 .msg{font-size:13px;color:var(--accent);min-height:1.2em;margin:6px 2px 0}
 footer{margin-top:18px;font-size:12px;color:var(--sub)}
 </style>
@@ -127,19 +133,51 @@ footer{margin-top:18px;font-size:12px;color:var(--sub)}
   <div class="stagewrap">
     <canvas id="stage" aria-label="ダンスプレビュー"></canvas>
     <div id="hud"></div>
-    <div id="shout">荒ぶり！</div>
   </div>
   <div class="tools">
     <button id="playBtn" class="primary">▶ 踊らせる</button>
+    <button id="recBtn">🎬 動画を作る</button>
     <button id="saveBtn">📷 PNG保存</button>
     <button id="soundBtn" class="on">🔊 音あり</button>
+    <label class="inline">BGM <select id="bgmSel">
+      <option value="auto">おまかせ（線で決まる）</option>
+      <option value="tengoku">天国と地獄</option>
+      <option value="maou">山の魔王の宮殿にて</option>
+      <option value="eine">アイネ・クライネ・ナハトムジーク</option>
+      <option value="beat">ビートだけ</option>
+    </select></label>
     <button id="komaBtn" class="on" title="コマ打ち（12fps）風の手描きアニメ感">コマ打ち</button>
   </div>
   <p class="msg" id="msg"></p>
 </section>
 
+<dialog id="shareDlg">
+  <h3>🎬 動画ができました</h3>
+  <video id="shareVideo" controls playsinline loop></video>
+  <p class="hint" id="fmtNote"></p>
+  <label class="inline" for="shareText" style="margin-top:8px">投稿文（自由に書きかえてOK）</label>
+  <textarea id="shareText" rows="4"></textarea>
+  <div class="tools">
+    <button id="shareNative" class="primary">📤 動画を共有</button>
+    <button id="dlVideo">💾 動画を保存</button>
+    <button id="copyText">📋 投稿文をコピー</button>
+  </div>
+  <div class="snsLinks">
+    <a id="shareX" target="_blank" rel="noopener" style="background:#000">X に投稿</a>
+    <a id="shareThreads" target="_blank" rel="noopener" style="background:#333">Threads</a>
+    <a id="shareBsky" target="_blank" rel="noopener" style="background:#1185fe">Bluesky</a>
+    <a id="shareLine" target="_blank" rel="noopener" style="background:#06c755">LINE</a>
+  </div>
+  <p class="hint">「📤 動画を共有」は動画と投稿文をまとめてアプリに渡します（スマホ向け）。<br>
+    X などのボタンは投稿文・タグ・URL が入った投稿画面を開きます。動画は「💾 動画を保存」してから添付してね。<br>
+    アプリによっては投稿文が渡らないので、いつも自動でコピーしています（貼り付けるだけでOK）。</p>
+  <p class="msg" id="shareMsg"></p>
+  <div class="tools" style="justify-content:flex-end"><button id="closeDlg">閉じる</button></div>
+</dialog>
+
 <footer>
-  サーバー通信なし・すべてブラウザ内で動作します。音はブラウザで合成した自作サウンドです。
+  サーバー通信なし・すべてブラウザ内で動作します。<br>
+  BGM：オッフェンバック「天国と地獄」、グリーグ「山の魔王の宮殿にて」、モーツァルト「アイネ・クライネ・ナハトムジーク」（いずれも著作権の切れた曲を、このゲーム用に自作アレンジ）。効果音はブラウザで合成しています。
 </footer>
 
 <script>
@@ -952,10 +990,10 @@ function charChanged() {
 /* ============================================================
    ③ ダンス生成：線の運動的特徴 → 振り付けキーフレーム
    ============================================================ */
-function buildDance(an, J) {
+function buildDance(an, J, bpm) {
   const R = restInfo(J);
   const rng = mulberry32(an.seed);
-  const beat = 60 / an.bpm;
+  const beat = 60 / bpm;
   const kfs = [];
   let prev = neutralPose(), spinAcc = 0;
   const footY = Math.max(J.footL[1], J.footR[1]);
@@ -1057,7 +1095,7 @@ function buildDance(an, J) {
   });
   const starts = []; let acc = 0;
   for (const k of kfs) { starts.push(acc); acc += k.dur; }
-  return { kfs, starts, total: acc, beat, bpm: an.bpm };
+  return { kfs, starts, total: acc, beat, bpm };
 }
 
 function lerpPose(a, b, t, wrapTo) {
@@ -1090,6 +1128,32 @@ function camera(J, pose) {
   const base = SH * 0.78 / bodyH;
   const cx = J.hip[0] + pose.rx * 0.6 + pose.cfx, cy = (J.headTop[1] + footY) / 2 + pose.ry * 0.5 + pose.cfy;
   return { base, cx, cy };
+}
+// 寄り（アップ）でもキャラが画面から大きく見切れないように、ズームと位置を調整
+function frameCamera(P, cam, pose) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const it of P.sk.items) for (const s of it.paths) for (let i = 0; i < s.n; i++) {
+    const x = s.xs[i], y = s.ys[i];
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x0 > x1) return;
+  const keep = 0.08; // この割合までは見切れてもOK
+  const w = x1 - x0, h = y1 - y0;
+  x0 += w * keep; x1 -= w * keep; y0 += h * keep; y1 -= h * keep;
+  const bw = x1 - x0, bh = y1 - y0;
+  const c = Math.abs(Math.cos(pose.cr)), sn = Math.abs(Math.sin(pose.cr));
+  const ew = bw * c + bh * sn, eh = bw * sn + bh * c;
+  const fit = 0.92;
+  const zFit = Math.min(SW * fit / (ew * cam.base), SH * fit / (eh * cam.base));
+  let cz = clamp(Math.min(pose.cz, zFit), 0.5, 3);
+  const hw = SW / 2 * fit / (cam.base * cz), hh = SH / 2 * fit / (cam.base * cz);
+  let cx = cam.cx, cy = cam.cy;
+  cx = bw <= 2 * hw ? clamp(cx, x1 - hw, x0 + hw) : (x0 + x1) / 2;
+  cy = bh <= 2 * hh ? clamp(cy, y1 - hh, y0 + hh) : (y0 + y1) / 2;
+  // 急なカメラのブレを抑える
+  if (P.camS) { cz = lerp(P.camS.cz, cz, 0.55); cx = lerp(P.camS.cx, cx, 0.55); cy = lerp(P.camS.cy, cy, 0.55); }
+  P.camS = { cz, cx, cy };
+  pose.cz = cz; cam.cx = cx; cam.cy = cy;
 }
 function applyCam(ctx, cam, pose, shake) {
   ctx.translate(SW / 2 + shake[0], SH / 2 + shake[1]);
@@ -1157,31 +1221,49 @@ function drawStill() {
   watermark(ctx);
 }
 
-function startDance(keepTime) {
+let startToken = 0;
+async function startDance(keepTime) {
   if (!hasBody()) { msg('先に①でキャラを描いてね（サンプルキャラでもOK）'); return false; }
   if (!state.analysis) { msg(state.line.length ? '線が短すぎます。もっと長く描いてね' : '②で一筆書きの線を描いてね（サンプル線でもOK）'); return false; }
+  if (rec && keepTime) return false; // 録画中は作り直さない
   msg('');
-  const dance = buildDance(state.analysis, state.joints);
+  const token = ++startToken;
+  ensureAudio();
+  const an = state.analysis;
+  let song = pickSong(an), buf = null;
+  if (song && actx) {
+    try { if (!bgmCache[song.id]) msg('曲を読み込み中…'); buf = await loadSong(song); msg(''); }
+    catch (e) { msg('曲を読み込めなかったので、ビートで踊ります'); }
+  }
+  if (token !== startToken) return false;
+  if (!buf) song = null;
+  // 線の速さでテンポを少し変える（曲は再生速度を 0.85〜1.2 倍に）
+  const rate = song ? clamp(an.bpm / song.bpm, 0.85, 1.2) : 1;
+  const bpm = song ? song.bpm * rate : an.bpm;
+  const dance = buildDance(an, state.joints, bpm);
   const sk = prepareSkin(state.strokes, state.joints);
-  const t0 = keepTime && play ? play.t0 : performance.now();
-  play = { ...dance, sk, J: state.joints, t0, lastFid: -1, lastK: -1, lastHB: -1, hist: [], parts: [], kStart: 0, an: state.analysis };
+  const lead = 0.08; // 音と動きの頭をそろえる
+  stopMusic();
+  if (song && actx) startMusic(buf, song, rate, actx.currentTime + lead);
+  const t0 = performance.now() + lead * 1000;
+  play = { ...dance, sk, J: state.joints, t0, lastFid: -1, lastK: -1, lastHB: -1, hist: [], parts: [], kStart: 0, an, song, rate, camS: null };
   const d = stageScale(); sc.setTransform(d, 0, 0, d, 0, 0); sc.fillStyle = stageBG(); sc.fillRect(0, 0, SW, SH);
   $('#playBtn').textContent = '■ 停止'; $('#playBtn').classList.add('stop');
-  if (state.sound) ensureAudio();
   if (!keepTime) { const r = stage.getBoundingClientRect(); if (r.top < 0 || r.bottom > innerHeight) stage.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   cancelAnimationFrame(rafId); rafId = requestAnimationFrame(frame);
   return true;
 }
 function stopDance() {
+  if (rec) return;
+  startToken++; stopMusic();
   play = null; cancelAnimationFrame(rafId);
   $('#playBtn').textContent = '▶ 踊らせる'; $('#playBtn').classList.remove('stop');
-  $('#shout').classList.remove('show');
   renderLine(); drawStill();
 }
 function frame(now) {
   if (!play) return;
   rafId = requestAnimationFrame(frame);
-  const t = (now - play.t0) / 1000;
+  const t = Math.max(0, (now - play.t0) / 1000);
   audioTick(t);
   const fps = state.koma ? 12 : 60;
   const fid = Math.floor(t * fps);
@@ -1210,9 +1292,7 @@ function renderDance(t, fid) {
   // キーフレーム切替：エフェクト・線ハイライト・音
   if (k !== P.lastK) {
     P.lastK = k; P.kStart = t;
-    $('#hud').textContent = `BEAT ${kf.chunk + 1}/${P.an.chunks.length} · ${P.bpm} BPM`;
-    $('#shout').textContent = kf.spin ? 'グルグル！' : '荒ぶり！';
-    $('#shout').classList.toggle('show', kf.burst || kf.spin);
+    $('#hud').textContent = `BEAT ${kf.chunk + 1}/${P.an.chunks.length} · ${Math.round(P.bpm)} BPM${P.song ? ' · ♪ ' + P.song.name : ''}`;
     if (kf.burst && kf.part === 0) {
       const ends = [F[BI.farmL].B, F[BI.farmR].B, F[BI.shinL].B, F[BI.shinR].B];
       for (let i = 0; i < 1; i++) {
@@ -1244,6 +1324,7 @@ function renderDance(t, fid) {
   }
 
   const cam = camera(P.J, pose);
+  frameCamera(P, cam, pose);
   const shakeAmt = kf.burst && frac < 0.5 ? 9 : kf.e > 1.2 ? 3 : 0;
   const shake = [Math.sin(fid * 12.9) * shakeAmt, Math.cos(fid * 7.3) * shakeAmt];
   ctx.save();
@@ -1295,20 +1376,60 @@ function renderDance(t, fid) {
 }
 
 /* ============================================================
-   サウンド（WebAudioで合成した自作ビート）
+   サウンド：BGM（著作権の切れたクラシックの自作アレンジ）＋ WebAudio 合成の効果音
    ============================================================ */
-let actx = null, master = null, noiseBuf = null;
+const SONGS = [
+  { id: 'tengoku', name: '天国と地獄', by: 'オッフェンバック', bpm: 150, beats: 64, file: 'bgm/tengoku.mp3' },
+  { id: 'maou', name: '山の魔王の宮殿にて', by: 'グリーグ', bpm: 138, beats: 64, file: 'bgm/maou.mp3' },
+  { id: 'eine', name: 'アイネ・クライネ・ナハトムジーク', by: 'モーツァルト', bpm: 132, beats: 64, file: 'bgm/eine.mp3' },
+];
+let actx = null, out = null, master = null, musicGain = null, recDest = null, noiseBuf = null, music = null;
+const bgmCache = {};
 function ensureAudio() {
   try {
     if (!actx) {
       actx = new (window.AudioContext || window.webkitAudioContext)();
-      master = actx.createGain(); master.gain.value = 0.45; master.connect(actx.destination);
+      out = actx.createGain(); out.gain.value = state.sound ? 1 : 0; out.connect(actx.destination);
+      master = actx.createGain(); master.gain.value = 0.45; master.connect(out);       // 効果音・ビート
+      musicGain = actx.createGain(); musicGain.gain.value = 0.9; musicGain.connect(out); // BGM
+      if (actx.createMediaStreamDestination) { recDest = actx.createMediaStreamDestination(); out.connect(recDest); }
       noiseBuf = actx.createBuffer(1, actx.sampleRate * 0.3, actx.sampleRate);
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
     if (actx.state === 'suspended') actx.resume();
   } catch (e) { actx = null; }
 }
+function setSound(on) {
+  state.sound = on;
+  const b = $('#soundBtn'); b.classList.toggle('on', on); b.textContent = on ? '🔊 音あり' : '🔇 音なし';
+  if (on) ensureAudio();
+  if (out) out.gain.setTargetAtTime(on ? 1 : 0, actx.currentTime, 0.02);
+}
+function pickSong(an) {
+  const v = $('#bgmSel').value;
+  if (v === 'beat') return null;
+  if (v === 'auto') return SONGS[an.seed % SONGS.length]; // 線で曲が決まる
+  return SONGS.find(s => s.id === v) || null;
+}
+async function loadSong(song) {
+  if (bgmCache[song.id]) return bgmCache[song.id];
+  const res = await fetch(song.file);
+  if (!res.ok) throw new Error(res.status);
+  const ab = await res.arrayBuffer();
+  const buf = await new Promise((ok, ng) => actx.decodeAudioData(ab, ok, ng));
+  bgmCache[song.id] = buf;
+  return buf;
+}
+function startMusic(buf, song, rate, when) {
+  stopMusic();
+  const s = actx.createBufferSource();
+  s.buffer = buf; s.loop = true; s.loopStart = 0;
+  s.loopEnd = Math.min(buf.duration, song.beats * 60 / song.bpm);
+  s.playbackRate.value = rate;
+  s.connect(musicGain); s.start(when);
+  music = s;
+}
+function stopMusic() { if (music) { try { music.stop(); } catch (e) { } music.disconnect(); music = null; } }
 function env(g, t, a, peak, dec) {
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a);
   g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec);
@@ -1329,8 +1450,9 @@ function tone(t, freq, type, peak, dec, slideTo) {
   if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dec);
   env(g, t, 0.004, peak, dec); o.connect(g).connect(master); o.start(t); o.stop(t + dec + 0.05);
 }
+// 「ビートだけ」のときの合成ドラム
 function audioTick(t) {
-  if (!state.sound || !actx || !play) return;
+  if (!state.sound || !actx || !play || play.song) return;
   const hb = Math.floor(t / (play.beat / 2));
   if (hb === play.lastHB) return;
   play.lastHB = hb;
@@ -1343,12 +1465,110 @@ const SCALE = [0, 3, 5, 7, 10, 12, 15];
 function noteFor(kf) {
   if (!actx) return;
   const at = actx.currentTime + 0.01;
-  const idx = Math.floor(((wrap(kf.dir) + Math.PI) / TAU) * SCALE.length) % SCALE.length;
-  const f = 196 * Math.pow(2, (SCALE[idx] + (kf.e > 1.2 ? 12 : 0)) / 12);
-  tone(at, f, 'square', 0.09, Math.min(0.25, kf.dur * 0.8));
-  tone(at, f / 2, 'sawtooth', 0.06, Math.min(0.2, kf.dur * 0.6));
-  if (kf.burst && kf.part === 0) tone(at, 1400, 'sawtooth', 0.07, 0.22, 140);
-  if (kf.spin) tone(at, 300, 'triangle', 0.1, 0.35, 1200);
+  if (!play.song) { // BGMがないときは振り付けごとに音を鳴らす
+    const idx = Math.floor(((wrap(kf.dir) + Math.PI) / TAU) * SCALE.length) % SCALE.length;
+    const f = 196 * Math.pow(2, (SCALE[idx] + (kf.e > 1.2 ? 12 : 0)) / 12);
+    tone(at, f, 'square', 0.09, Math.min(0.25, kf.dur * 0.8));
+    tone(at, f / 2, 'sawtooth', 0.06, Math.min(0.2, kf.dur * 0.6));
+  }
+  const k = play.song ? 0.6 : 1;
+  if (kf.burst && kf.part === 0) tone(at, 1400, 'sawtooth', 0.07 * k, 0.22, 140);
+  if (kf.spin) tone(at, 300, 'triangle', 0.1 * k, 0.35, 1200);
+}
+
+/* ============================================================
+   動画の書き出し（MP4）と SNS 共有
+   ============================================================ */
+const SITE_URL = /^https?:/.test(location.protocol) ? location.origin + location.pathname.replace(/index\.html$/, '') : 'https://cadmium2525.github.io/geddan/';
+const TAGS = ['#GEDDANDRAW', '#お絵かきダンス', '#荒ぶり'];
+let rec = null, lastVideo = null;
+function pickMime() {
+  if (!window.MediaRecorder) return null;
+  const c = ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4',
+    'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  return c.find(m => { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } }) || null;
+}
+function stamp() {
+  const dt = new Date(), z = n => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}${z(dt.getMonth() + 1)}${z(dt.getDate())}-${z(dt.getHours())}${z(dt.getMinutes())}${z(dt.getSeconds())}`;
+}
+async function recordVideo() {
+  if (rec) return;
+  const mime = pickMime();
+  if (!mime || !stage.captureStream) { msg('このブラウザは動画の書き出しに対応していません（最新の Chrome / Safari で試してね）'); return; }
+  ensureAudio();
+  if (!(await startDance(false))) return;
+  const P = play;
+  const loops = Math.max(1, Math.ceil(8 / P.total));
+  const dur = Math.min(P.total * loops, 30);
+  const tracks = [...stage.captureStream(30).getVideoTracks()];
+  if (recDest && state.sound) tracks.push(...recDest.stream.getAudioTracks());
+  const chunks = [];
+  let r;
+  try { r = new MediaRecorder(new MediaStream(tracks), { mimeType: mime, videoBitsPerSecond: 6e6, audioBitsPerSecond: 160e3 }); }
+  catch (e) { msg('録画を始められませんでした'); return; }
+  rec = r;
+  r.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  const done = new Promise(ok => { r.onstop = ok; });
+  const btn = $('#recBtn');
+  btn.disabled = true; $('#playBtn').disabled = true;
+  r.start(250);
+  const t0 = performance.now();
+  const iv = setInterval(() => {
+    const s = (performance.now() - t0) / 1000;
+    btn.textContent = `● 録画中 ${Math.min(dur, s).toFixed(1)} / ${dur.toFixed(1)}秒`;
+  }, 100);
+  await new Promise(ok => setTimeout(ok, dur * 1000 + 150));
+  clearInterval(iv);
+  if (r.state !== 'inactive') r.stop();
+  await done;
+  rec = null;
+  btn.disabled = false; $('#playBtn').disabled = false; btn.textContent = '🎬 動画を作る';
+  tracks.forEach(t => { if (t.kind === 'video') t.stop(); });
+  const type = mime.split(';')[0];
+  const blob = new Blob(chunks, { type });
+  if (!blob.size) { msg('録画に失敗しました'); return; }
+  lastVideo = { blob, ext: type === 'video/mp4' ? 'mp4' : 'webm', type, song: P.song };
+  openShare();
+}
+function shareText() { return $('#shareText').value; }
+function defaultText() {
+  const an = state.analysis, song = lastVideo && lastVideo.song;
+  return `描いた線がダンスになった！\n荒ぶり度 ${an ? an.arabu : '-'}${song ? `／BGM「${song.name}」` : ''}\n${TAGS.join(' ')}\n${SITE_URL}`;
+}
+function updateShareLinks() {
+  const t = encodeURIComponent(shareText());
+  $('#shareX').href = `https://x.com/intent/post?text=${t}`;
+  $('#shareThreads').href = `https://www.threads.net/intent/post?text=${t}`;
+  $('#shareBsky').href = `https://bsky.app/intent/compose?text=${t}`;
+  $('#shareLine').href = `https://line.me/R/share?text=${t}`;
+}
+function videoFile() {
+  return new File([lastVideo.blob], `geddan-draw-${stamp()}.${lastVideo.ext}`, { type: lastVideo.type });
+}
+function openShare() {
+  const v = $('#shareVideo');
+  if (v.src) URL.revokeObjectURL(v.src);
+  v.src = URL.createObjectURL(lastVideo.blob);
+  $('#shareText').value = defaultText();
+  $('#fmtNote').textContent = lastVideo.ext === 'mp4' ? '' : '※ このブラウザでは MP4 で書き出せないため WebM 形式です。';
+  const f = videoFile();
+  const native = navigator.canShare && navigator.canShare({ files: [f] });
+  $('#shareNative').style.display = native ? '' : 'none';
+  updateShareLinks();
+  $('#shareDlg').showModal();
+  v.play().catch(() => { });
+}
+async function copyText(quiet) {
+  try { await navigator.clipboard.writeText(shareText()); if (!quiet) toast('投稿文をコピーしました'); return true; }
+  catch (e) { $('#shareText').select(); document.execCommand && document.execCommand('copy'); if (!quiet) toast('投稿文をコピーしました'); return true; }
+}
+function toast(s) { const el = $('#shareMsg'); el.textContent = s; clearTimeout(toast.t); toast.t = setTimeout(() => el.textContent = '', 3000); }
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
 /* ============================================================
@@ -1356,11 +1576,19 @@ function noteFor(kf) {
    ============================================================ */
 function msg(s) { $('#msg').textContent = s; }
 $('#playBtn').onclick = () => { if (play) stopDance(); else startDance(false); };
-$('#soundBtn').onclick = e => {
-  state.sound = !state.sound; e.target.classList.toggle('on', state.sound);
-  e.target.textContent = state.sound ? '🔊 音あり' : '🔇 音なし';
-  if (state.sound) ensureAudio();
+$('#soundBtn').onclick = () => setSound(!state.sound);
+$('#bgmSel').onchange = () => { if (play && !rec) startDance(true); };
+$('#recBtn').onclick = recordVideo;
+$('#shareNative').onclick = async () => {
+  await copyText(true);
+  try { await navigator.share({ files: [videoFile()], text: shareText() }); toast('投稿文はコピー済み。投稿画面で貼り付けてね'); }
+  catch (e) { if (e.name !== 'AbortError') toast('共有できませんでした。動画を保存して投稿してね'); }
 };
+$('#dlVideo').onclick = () => downloadBlob(lastVideo.blob, videoFile().name);
+$('#copyText').onclick = () => copyText(false);
+$('#shareText').oninput = updateShareLinks;
+$('#closeDlg').onclick = () => { $('#shareVideo').pause(); $('#shareDlg').close(); };
+document.querySelectorAll('.snsLinks a').forEach(a => a.addEventListener('click', () => copyText(true)));
 $('#komaBtn').onclick = e => { state.koma = !state.koma; e.target.classList.toggle('on', state.koma); };
 $('#saveBtn').onclick = () => {
   if (!play) drawStill();
